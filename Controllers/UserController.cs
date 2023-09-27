@@ -4,9 +4,9 @@ using MongoDB.Driver.Linq;
 using System.ComponentModel.DataAnnotations;
 using PaymentWall.Models;
 using PaymentWall.Services;
-using MuhasebeFull.Users;
+using PaymentWall.User;
 
-namespace Muhasebe.Controllers
+namespace PaymentWall.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
@@ -207,10 +207,19 @@ namespace Muhasebe.Controllers
             var _logCollection = _connectionService.db().GetCollection<Log>("Log");
 
             var siteSettings = _siteCollection.Find<Site>(Builders<Site>.Filter.Empty).FirstOrDefault();
-            int maxFailedLoginAttempts = siteSettings?.maxFailedLoginAttempts ?? 0; // 0 sa aktif değil
-
+            if (siteSettings == null)
+            {
+                siteSettings = new Site
+                {
+                    maxFailedLoginAttempts = 5,
+                };
+            }
             var userInDb = _userCollection.Find<Users>(u => u.email == loginData.email).FirstOrDefault();
 
+            if (userInDb == null)
+            {
+                return Ok(new _loginRes { type = "error", message = "Kullanıcı bulunamadı." });
+            }
             if (userInDb.status == "0")
             {
                 return Ok(new _loginRes { type = "error", message = "Your account is inactive." });
@@ -219,14 +228,13 @@ namespace Muhasebe.Controllers
             if (userInDb.password != ComputeSha256Hash(loginData.password))
             {
                 userInDb.failedLoginAttempts += 1;
-
                 if (userInDb.failedLoginAttempts >= siteSettings.maxFailedLoginAttempts)
                 {
                     userInDb.status = "0";
                 }
 
                 _userCollection.ReplaceOne(u => u._id == userInDb._id, userInDb);
-                return Ok(new _loginRes { type = "error", message = "wrong password." });
+                return Ok(new _loginRes { type = "error", message = "Wrong Password." });
             }
 
             userInDb.failedLoginAttempts = 0;
@@ -240,7 +248,7 @@ namespace Muhasebe.Controllers
                 date = DateTimeOffset.UtcNow,
                 ip = userIpAddress,
                 userAgent = userAgent,
-                type = "1" // 1, 'login' anlamına geliyor
+                type = "1"
             };
 
             _logCollection.InsertOne(userLog);
@@ -285,7 +293,7 @@ namespace Muhasebe.Controllers
             var existingUser = await _userCollection.Find(u => u._id.ToString() == req.userId).FirstOrDefaultAsync();
             if (existingUser == null)
             {
-                return BadRequest(new _updateUserRes { type = "error", message = "User not found." });
+                return Ok(new _updateUserRes { type = "error", message = "User not found." });
             }
 
             if (!string.IsNullOrEmpty(req.newPassword))
@@ -321,6 +329,22 @@ namespace Muhasebe.Controllers
         }
         #endregion
 
+        #region Logout User
+        public class _logoutRes
+        {
+            [Required]
+            public string type { get; set; }
+            public string message { get; set; }
+        }
+
+        [HttpPost("logout")]
+        public ActionResult<_logoutRes> Logout()
+        {
+            userFunctions.ClearCurrentUserFromSession(HttpContext);
+
+            return Ok(new _logoutRes { type = "success", message = "Logged out successfully." });
+        }
+        #endregion
 
     }
 
