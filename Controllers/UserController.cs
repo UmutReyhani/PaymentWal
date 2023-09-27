@@ -2,7 +2,6 @@
 using MongoDB.Driver;
 using MongoDB.Driver.Linq;
 using System.ComponentModel.DataAnnotations;
-using MongoDB.Bson;
 using PaymentWall.Models;
 using PaymentWall.Services;
 using MuhasebeFull.Users;
@@ -37,18 +36,18 @@ namespace Muhasebe.Controllers
         #endregion
 
         #region uniqwallet
-        private string GenerateUniqueWalletId()
+        private int GenerateUniqueWalletId()
         {
             Random random = new Random();
-            var _userCollection = _connectionService.db().GetCollection<Users>("Users");
-            string walletId;
+            var _walletCollection = _connectionService.db().GetCollection<Wallet>("Wallet");
+            int walletId;
             bool isUnique = false;
 
             do
             {
-                walletId = random.Next(10000000, 99999999).ToString();
-                var existingUser = _userCollection.Find<Users>(u => u.walletId == walletId).FirstOrDefault();
-                if (existingUser == null)
+                walletId = random.Next(10000000, 99999999);
+                var existingWallet = _walletCollection.Find<Wallet>(w => w._id == walletId).FirstOrDefault();
+                if (existingWallet == null)
                 {
                     isUnique = true;
                 }
@@ -67,13 +66,13 @@ namespace Muhasebe.Controllers
             [Required]
             public string surname { get; set; }
             [Required]
-            public DateTime birthDate { get; set; }
+            public DateTime birthDate { get; set; } // 18 den küçük olamaz
             [Required]
             public string email { get; set; }
             [Required]
             public string password { get; set; }
             [Required]
-            public string currency { get; set; }
+            public string currency { get; set; } //ucu açık
             [Required]
             public string type { get; set; } // personel-business(0-1)
             [Required]
@@ -100,6 +99,7 @@ namespace Muhasebe.Controllers
         {
             var _userCollection = _connectionService.db().GetCollection<Users>("Users");
             var _addressCollection = _connectionService.db().GetCollection<Address>("Addresses");
+            var _walletCollection = _connectionService.db().GetCollection<Wallet>("Wallet");
 
             DateTime today = DateTime.Today;
             int age = today.Year - data.birthDate.Year;
@@ -124,13 +124,11 @@ namespace Muhasebe.Controllers
 
             Users newUser = new Users
             {
-                walletId = GenerateUniqueWalletId(),
                 name = data.name,
                 surname = data.surname,
                 birthDate = data.birthDate,
                 email = data.email,
                 password = ComputeSha256Hash(data.password),
-                currency = data.currency,
                 type = data.type,
                 status = "1",
                 verified = false,
@@ -139,6 +137,16 @@ namespace Muhasebe.Controllers
             };
 
             _userCollection.InsertOne(newUser);
+
+            Wallet newWallet = new Wallet
+            {
+                _id = GenerateUniqueWalletId(),
+                userId = newUser._id,
+                balance = 0,
+                currency = data.currency,
+            };
+
+            _walletCollection.InsertOne(newWallet);
 
             Address userAddress = new Address
             {
@@ -156,7 +164,7 @@ namespace Muhasebe.Controllers
             var userAgent = HttpContext.Request.Headers["User-Agent"].FirstOrDefault();
             Log userLog = new Log
             {
-                userId = newUser._id.ToString(),
+                userId = newUser._id,
                 date = DateTimeOffset.UtcNow,
                 ip = userIpAddress,
                 userAgent = userAgent,
@@ -183,7 +191,7 @@ namespace Muhasebe.Controllers
         public class _loginRes
         {
             [Required]
-            public string type { get; set; } // success / error 
+            public string type { get; set; }
             public string message { get; set; }
         }
         [HttpPost("login")]
@@ -228,8 +236,8 @@ namespace Muhasebe.Controllers
 
             Log userLog = new Log
             {
-                userId = userInDb._id.ToString(),
-                date = DateTimeOffset.Now,
+                userId = userInDb._id,
+                date = DateTimeOffset.UtcNow,
                 ip = userIpAddress,
                 userAgent = userAgent,
                 type = "1" // 1, 'login' anlamına geliyor
@@ -255,8 +263,12 @@ namespace Muhasebe.Controllers
             [Required]
             public string userId { get; set; }
             public string newPassword { get; set; }
-            public Address updatedAddress { get; set; }
+            public string address { get; set; }
+            public string city { get; set; }
+            public string postCode { get; set; }
+            public string phoneNumber { get; set; }
         }
+
         public class _updateUserRes
         {
             [Required]
@@ -283,22 +295,26 @@ namespace Muhasebe.Controllers
                 await _userCollection.UpdateOneAsync(u => u._id.ToString() == existingUser._id.ToString(), updatePassword);
             }
 
-            if (req.updatedAddress != null)
+            var existingAddress = await _addressCollection.Find(a => a.userId.ToString() == existingUser._id.ToString()).FirstOrDefaultAsync();
+            if (existingAddress != null)
             {
-                var existingAddress = await _addressCollection.Find(a => a.userId.ToString() == existingUser._id.ToString()).FirstOrDefaultAsync();
-                if (existingAddress != null)
+                existingAddress.address = req.address ?? existingAddress.address;
+                existingAddress.city = req.city ?? existingAddress.city;
+                existingAddress.postCode = req.postCode ?? existingAddress.postCode;
+                existingAddress.phoneNumber = req.phoneNumber ?? existingAddress.phoneNumber;
+                await _addressCollection.ReplaceOneAsync(a => a._id.ToString() == existingAddress._id.ToString(), existingAddress);
+            }
+            else
+            {
+                Address newAddress = new Address
                 {
-                    existingAddress.address = req.updatedAddress.address;
-                    existingAddress.city = req.updatedAddress.city;
-                    existingAddress.postCode = req.updatedAddress.postCode;
-                    existingAddress.phoneNumber = req.updatedAddress.phoneNumber;
-                    await _addressCollection.ReplaceOneAsync(a => a._id.ToString() == existingAddress._id.ToString(), existingAddress);
-                }
-                else
-                {
-                    req.updatedAddress.userId = existingUser._id;
-                    await _addressCollection.InsertOneAsync(req.updatedAddress);
-                }
+                    userId = existingUser._id,
+                    address = req.address,
+                    city = req.city,
+                    postCode = req.postCode,
+                    phoneNumber = req.phoneNumber
+                };
+                await _addressCollection.InsertOneAsync(newAddress);
             }
 
             return Ok(new _updateUserRes { type = "success", message = "User updated successfully." });

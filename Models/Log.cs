@@ -8,7 +8,7 @@ namespace PaymentWall.Models
     {
         public ObjectId _id { get; set; }
 
-        public string userId { get; set; }
+        public ObjectId userId { get; set; }
         [BsonRepresentation(BsonType.DateTime)]
         public DateTimeOffset date { get; set; }
         public string userAgent { get; set; }
