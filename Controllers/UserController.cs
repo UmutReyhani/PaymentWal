@@ -5,6 +5,8 @@ using System.ComponentModel.DataAnnotations;
 using PaymentWall.Models;
 using PaymentWall.Services;
 using PaymentWall.User;
+using System.Net.Mail;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace PaymentWall.Controllers
 {
@@ -17,6 +19,32 @@ namespace PaymentWall.Controllers
         {
             _connectionService = connectionService;
         }
+        #region wrongpass
+
+        private static MemoryCache _memCache = new MemoryCache(new MemoryCacheOptions());
+
+        public static bool wrongPassword(string ip, bool upsert)
+        {
+            string cacheName = "wrongPassword-" + ip;
+            int response = 0;
+
+            _memCache.TryGetValue(cacheName, out response);
+
+            if (upsert)
+            {
+                response += 1;
+                var cacheEntryOptions = new MemoryCacheEntryOptions
+                {
+                    AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(3)
+                };
+
+                _memCache.Set(cacheName, response, cacheEntryOptions);
+            }
+
+            return response > 7;
+        }
+
+        #endregion
 
         #region hashpass
         private string ComputeSha256Hash(string rawData)
@@ -186,6 +214,8 @@ namespace PaymentWall.Controllers
             public string email { get; set; }
             [Required]
             public string password { get; set; }
+            [Required]
+            public string captchaResponse { get; set; }
         }
 
         public class _loginRes
@@ -197,29 +227,32 @@ namespace PaymentWall.Controllers
         [HttpPost("login")]
         public ActionResult<_loginRes> Login([FromBody] _loginReq loginData)
         {
+            string userIpAddress = GetUserIpAddress();
+
+            if (IsIpBlockedFromLogin(userIpAddress))
+            {
+                return Ok(new _loginRes { type = "error", message = "Your login was disabled 5 minutes." });
+            }
+
+            var correctCaptchaAnswer = HttpContext.Session.GetString("CaptchaAnswer");
+            if (loginData.captchaResponse != correctCaptchaAnswer)
+            {
+                return Ok(new _loginRes { type = "error", message = "Invalid captcha response." });
+            }
+
             if (loginData == null || string.IsNullOrEmpty(loginData.email) || string.IsNullOrEmpty(loginData.password))
             {
                 return Ok(new _loginRes { type = "error", message = "mail cant be null" });
             }
 
-            var _userCollection = _connectionService.db().GetCollection<Users>("Users");
-            var _siteCollection = _connectionService.db().GetCollection<Site>("Site");
-            var _logCollection = _connectionService.db().GetCollection<Log>("Log");
-
-            var siteSettings = _siteCollection.Find<Site>(Builders<Site>.Filter.Empty).FirstOrDefault();
-            if (siteSettings == null)
-            {
-                siteSettings = new Site
-                {
-                    maxFailedLoginAttempts = 5,
-                };
-            }
-            var userInDb = _userCollection.Find<Users>(u => u.email == loginData.email).FirstOrDefault();
-
+            var userInDb = GetUserFromDb(loginData.email);
             if (userInDb == null)
             {
                 return Ok(new _loginRes { type = "error", message = "Kullanıcı bulunamadı." });
             }
+
+            var siteSettings = GetSiteSettings() ?? new Site { maxFailedLoginAttempts = 5 };
+
             if (userInDb.status == "0")
             {
                 return Ok(new _loginRes { type = "error", message = "Your account is inactive." });
@@ -227,39 +260,86 @@ namespace PaymentWall.Controllers
 
             if (userInDb.password != ComputeSha256Hash(loginData.password))
             {
-                userInDb.failedLoginAttempts += 1;
-                if (userInDb.failedLoginAttempts >= siteSettings.maxFailedLoginAttempts)
-                {
-                    userInDb.status = "0";
-                }
-
-                _userCollection.ReplaceOne(u => u._id == userInDb._id, userInDb);
+                HandleFailedLogin(userInDb, userIpAddress, siteSettings);
+                HttpContext.Session.Remove("CaptchaAnswer");
                 return Ok(new _loginRes { type = "error", message = "Wrong Password." });
             }
 
-            userInDb.failedLoginAttempts = 0;
+            HandleSuccessfulLogin(userInDb);
+            HttpContext.Session.Remove("CaptchaAnswer");
+            return Ok(new _loginRes { type = "success", message = "Login Successfull" });
+        }
 
-            var userIpAddress = HttpContext.Connection.RemoteIpAddress?.ToString();
+        private string GetUserIpAddress()
+        {
+            try
+            {
+                return HttpContext.Request.Headers.ContainsKey("CF-CONNECTING-IP")
+                    ? HttpContext.Request.Headers["CF-CONNECTING-IP"].ToString()
+                    : HttpContext.Connection.RemoteIpAddress.ToString();
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private bool IsIpBlockedFromLogin(string ip)
+        {
+            return wrongPassword(ip, false);
+        }
+
+        private Users GetUserFromDb(string email)
+        {
+            var _userCollection = _connectionService.db().GetCollection<Users>("Users");
+            return _userCollection.Find<Users>(u => u.email == email).FirstOrDefault();
+        }
+
+        private Site GetSiteSettings()
+        {
+            var _siteCollection = _connectionService.db().GetCollection<Site>("Site");
+            return _siteCollection.Find<Site>(Builders<Site>.Filter.Empty).FirstOrDefault();
+        }
+
+        private void HandleFailedLogin(Users user, string ip, Site siteSettings)
+        {
+            wrongPassword(ip, true);
+
+            user.failedLoginAttempts += 1;
+            if (user.failedLoginAttempts >= siteSettings.maxFailedLoginAttempts)
+            {
+                user.status = "0";
+            }
+
+            var _userCollection = _connectionService.db().GetCollection<Users>("Users");
+            _userCollection.ReplaceOne(u => u._id == user._id, user);
+        }
+
+        private void HandleSuccessfulLogin(Users user)
+        {
+            user.failedLoginAttempts = 0;
+
             var userAgent = HttpContext.Request.Headers["User-Agent"].FirstOrDefault();
-
             Log userLog = new Log
             {
-                userId = userInDb._id,
+                userId = user._id,
                 date = DateTimeOffset.UtcNow,
-                ip = userIpAddress,
+                ip = GetUserIpAddress(),
                 userAgent = userAgent,
                 type = "1"
             };
 
+            var _logCollection = _connectionService.db().GetCollection<Log>("Log");
             _logCollection.InsertOne(userLog);
 
-            userInDb.lastLogin = DateTimeOffset.UtcNow;
-            _userCollection.ReplaceOne(u => u._id == userInDb._id, userInDb);
+            user.lastLogin = DateTimeOffset.UtcNow;
 
-            userFunctions.SetCurrentUserToSession(HttpContext, userInDb);
+            var _userCollection = _connectionService.db().GetCollection<Users>("Users");
+            _userCollection.ReplaceOne(u => u._id == user._id, user);
 
-            return Ok(new _loginRes { type = "success", message = "Login Successfull" });
+            userFunctions.SetCurrentUserToSession(HttpContext, user);
         }
+
 
 
         #endregion
@@ -268,8 +348,7 @@ namespace PaymentWall.Controllers
 
         public class _updateUserReq
         {
-            [Required]
-            public string userId { get; set; }
+            public string oldPassword { get; set; }
             public string newPassword { get; set; }
             public string address { get; set; }
             public string city { get; set; }
@@ -287,10 +366,16 @@ namespace PaymentWall.Controllers
         [HttpPost("updateUser")]
         public async Task<ActionResult<_updateUserRes>> UpdateUser([FromBody] _updateUserReq req)
         {
+            var userIdFromSession = HttpContext.Session.GetString("id");
+            if (string.IsNullOrEmpty(userIdFromSession))
+            {
+                return Ok(new _updateUserRes { type = "error", message = "User not logged in." });
+            }
+
             var _userCollection = _connectionService.db().GetCollection<Users>("Users");
             var _addressCollection = _connectionService.db().GetCollection<Address>("Addresses");
 
-            var existingUser = await _userCollection.Find(u => u._id.ToString() == req.userId).FirstOrDefaultAsync();
+            var existingUser = _userCollection.AsQueryable().FirstOrDefault(u => u._id.ToString() == userIdFromSession);
             if (existingUser == null)
             {
                 return Ok(new _updateUserRes { type = "error", message = "User not found." });
@@ -298,19 +383,23 @@ namespace PaymentWall.Controllers
 
             if (!string.IsNullOrEmpty(req.newPassword))
             {
+                if (ComputeSha256Hash(req.oldPassword) != existingUser.password)
+                {
+                    return Ok(new _updateUserRes { type = "error", message = "Incorrect old password." });
+                }
+
                 existingUser.password = ComputeSha256Hash(req.newPassword);
-                var updatePassword = Builders<Users>.Update.Set(u => u.password, existingUser.password);
-                await _userCollection.UpdateOneAsync(u => u._id.ToString() == existingUser._id.ToString(), updatePassword);
+                await _userCollection.ReplaceOneAsync(u => u._id == existingUser._id, existingUser);
             }
 
-            var existingAddress = await _addressCollection.Find(a => a.userId.ToString() == existingUser._id.ToString()).FirstOrDefaultAsync();
+            var existingAddress = _addressCollection.AsQueryable().FirstOrDefault(a => a.userId == existingUser._id);
             if (existingAddress != null)
             {
                 existingAddress.address = req.address ?? existingAddress.address;
                 existingAddress.city = req.city ?? existingAddress.city;
                 existingAddress.postCode = req.postCode ?? existingAddress.postCode;
                 existingAddress.phoneNumber = req.phoneNumber ?? existingAddress.phoneNumber;
-                await _addressCollection.ReplaceOneAsync(a => a._id.ToString() == existingAddress._id.ToString(), existingAddress);
+                await _addressCollection.ReplaceOneAsync(a => a._id == existingAddress._id, existingAddress);
             }
             else
             {
@@ -327,6 +416,45 @@ namespace PaymentWall.Controllers
 
             return Ok(new _updateUserRes { type = "success", message = "User updated successfully." });
         }
+
+
+        #endregion
+
+        #region Update User Status
+
+        public class _updateUserStatusReq
+        {
+            [Required]
+            public string userId { get; set; }  // Güncellenecek kullanıcının ID'si
+            [Required]
+            public string status { get; set; }  // 0: passive, 1: active
+        }
+
+        public class _updateUserStatusRes
+        {
+            [Required]
+            public string type { get; set; }
+            public string message { get; set; }
+        }
+
+        [HttpPost("updateUserStatus")]
+        public async Task<ActionResult<_updateUserStatusRes>> UpdateUserStatus([FromBody] _updateUserStatusReq req)
+        {
+            var _userCollection = _connectionService.db().GetCollection<Users>("Users");
+
+            // Kullanıcıyı bul
+            var existingUser = _userCollection.AsQueryable().FirstOrDefault(u => u._id.ToString() == req.userId);
+            if (existingUser == null)
+            {
+                return Ok(new _updateUserStatusRes { type = "error", message = "User not found." });
+            }
+
+            existingUser.status = req.status;
+            await _userCollection.ReplaceOneAsync(u => u._id == existingUser._id, existingUser);
+
+            return Ok(new _updateUserStatusRes { type = "success", message = "User status updated successfully." });
+        }
+
         #endregion
 
         #region Logout User
@@ -345,6 +473,62 @@ namespace PaymentWall.Controllers
             return Ok(new _logoutRes { type = "success", message = "Logged out successfully." });
         }
         #endregion
+
+        //#region forgot pass
+        //public class _forgotPasswordRequest
+        //{
+        //    [Required]
+        //    public string email { get; set; }
+        //}
+
+        //public class _forgotPasswordResponse
+        //{
+        //    public string type { get; set; }
+        //    public string message { get; set; }
+        //}
+
+        //[HttpPost("forgotpassword")]
+        //public ActionResult RequestPasswordReset([FromBody] _forgotPasswordRequest request)
+        //{
+        //    var _userCollection = _connectionService.db().GetCollection<Users>("Users");
+        //    var user = _userCollection.Find(u => u.email == request.email).FirstOrDefault();
+
+        //    if (user == null)
+        //    {
+        //        return Ok(new { message = "Bu e-posta adresiyle kayıtlı bir kullanıcı bulunamadı." });
+        //    }
+
+        //    // Yeni bir GUID oluştur
+        //    user.passwordResetToken = Guid.NewGuid().ToString();
+        //    user.TokenCreationDate = DateTimeOffset.UtcNow;
+
+        //    _userCollection.ReplaceOne(u => u._id == user._id, user);
+        //    #region e posta yolla aktif değil 
+        //    //// E-posta gönderimi
+        //    //var message = new MimeMessage();
+        //    //message.From.Add(new MailboxAddress("Web Siteniz", "your_email@example.com"));
+        //    //message.To.Add(new MailboxAddress(user.name, user.email));
+        //    //message.Subject = "Şifre Sıfırlama Talimatları";
+
+        //    //var resetLink = $"https://yoursite.com/reset-password?token={user.PasswordResetToken}"; // Gerçek bağlantınızı kullanın
+        //    //message.Body = new TextPart("plain")
+        //    //{
+        //    //    Text = $"Şifrenizi sıfırlamak için aşağıdaki bağlantıya tıklayın:\n{resetLink}"
+        //    //};
+
+        //    //using (var client = new SmtpClient())
+        //    //{
+        //    //    client.Connect("smtp.example.com", 587, false); // SMTP sunucu bilgilerinizi kullanın
+        //    //    client.Authenticate("your_email@example.com", "your_password"); // SMTP kullanıcı adı ve şifrenizi kullanın
+
+        //    //    client.Send(message);
+        //    //    client.Disconnect(true);
+        //    //}
+        //    #endregion
+        //    return Ok(new { message = "Şifre sıfırlama talimatları e-posta adresinize gönderildi." });
+        //}
+
+        //#endregion
 
     }
 

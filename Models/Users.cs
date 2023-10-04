@@ -22,5 +22,8 @@ namespace PaymentWall.Models {
         public bool verified { get; set; }
         public bool emailVerified { get; set; }
         public int failedLoginAttempts { get; set; } = 0;
+        public string passwordResetToken { get; set; }
+        [BsonRepresentation(BsonType.DateTime)]
+        public DateTimeOffset? TokenCreationDate { get; set; }
     }
 }

@@ -17,5 +17,7 @@ namespace PaymentWall.Models
         public decimal fees { get; set; }
         public string currency { get; set; }
         public ObjectId? financialId { get; set; }
+        [BsonRepresentation(BsonType.DateTime)]
+        public DateTimeOffset date { get; set; }
     }
 }

@@ -43,3 +43,7 @@ C:\Users\ASUS\source\repos\PaymentWall\obj\Debug\net6.0\refint\PaymentWall.dll
 C:\Users\ASUS\source\repos\PaymentWall\obj\Debug\net6.0\PaymentWall.pdb
 C:\Users\ASUS\source\repos\PaymentWall\obj\Debug\net6.0\PaymentWall.genruntimeconfig.cache
 C:\Users\ASUS\source\repos\PaymentWall\obj\Debug\net6.0\ref\PaymentWall.dll
+C:\Users\ASUS\source\repos\PaymentWall\bin\Debug\net6.0\Microsoft.Win32.SystemEvents.dll
+C:\Users\ASUS\source\repos\PaymentWall\bin\Debug\net6.0\System.Drawing.Common.dll
+C:\Users\ASUS\source\repos\PaymentWall\bin\Debug\net6.0\runtimes\win\lib\net6.0\Microsoft.Win32.SystemEvents.dll
+C:\Users\ASUS\source\repos\PaymentWall\bin\Debug\net6.0\runtimes\win\lib\net6.0\System.Drawing.Common.dll

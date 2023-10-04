@@ -18,7 +18,7 @@ namespace PaymentWall.Controllers
             _connectionService = connectionService;
         }
 
-        public class TransferRequest
+        public class _transferRequest
         {
             [Required]
             public int senderWalletId { get; set; }
@@ -29,14 +29,14 @@ namespace PaymentWall.Controllers
             public decimal Amount { get; set; }
         }
 
-        public class TransferResponse
+        public class _transferResponse
         {
             public string Type { get; set; } // success / error
             public string Message { get; set; }
         }
 
         [HttpPost("transfer")]
-        public ActionResult<TransferResponse> TransferFunds([FromBody] TransferRequest transferData)
+        public ActionResult<_transferResponse> TransferFunds([FromBody] _transferRequest transferData)
         {
             var _walletCollection = _connectionService.db().GetCollection<Wallet>("Wallet");
             var _accountingCollection = _connectionService.db().GetCollection<Accounting>("Accounting");
@@ -46,12 +46,17 @@ namespace PaymentWall.Controllers
 
             if (sender == null || recipient == null)
             {
-                return Ok(new TransferResponse { Type = "error", Message = "Invalid wallet Id." });
+                return Ok(new _transferResponse { Type = "error", Message = "Invalid wallet Id." });
+            }
+
+            if (sender.currency != recipient.currency)
+            {
+                return Ok(new _transferResponse { Type = "error", Message = "Please use same currency for transfer." });
             }
 
             if (sender.balance < transferData.Amount)
             {
-                return Ok(new TransferResponse { Type = "error", Message = "Insufficient balance." });
+                return Ok(new _transferResponse { Type = "error", Message = "Insufficient balance." });
             }
 
             sender.balance -= transferData.Amount;
@@ -78,7 +83,7 @@ namespace PaymentWall.Controllers
             };
             _accountingCollection.InsertOne(recipientAccounting);
 
-            return Ok(new TransferResponse { Type = "success", Message = "Transfer completed successfully." });
+            return Ok(new _transferResponse { Type = "success", Message = "Transfer completed successfully." });
         }
     }
 }

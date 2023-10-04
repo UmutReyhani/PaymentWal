@@ -1,5 +1,6 @@
 using PaymentWall.Models;
 using PaymentWall.Services;
+using PaymentWall.Web.Tools.Converters.Swagger;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,7 +16,11 @@ builder.Services.AddSession(options =>
 });
 
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.OperationFilter<ObjectIdOperationFilter>();
+    options.SchemaFilter<ObjectIdSchemaFilter>();
+});
 builder.Services.Configure<DatabaseSettings>(
      builder.Configuration.GetSection("MyDb")
 );
