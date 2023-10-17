@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.ComponentModel.DataAnnotations;
 using MongoDB.Bson;
+using PaymentWall.Attributes;
 
 namespace PaymentWall.Controllers
 {
@@ -30,7 +31,7 @@ namespace PaymentWall.Controllers
             do
             {
                 walletId = random.Next(10000000, 99999999);
-                var existingWallet = _walletCollection.Find<Wallet>(w => w._id == walletId).FirstOrDefault();
+                var existingWallet = _walletCollection.AsQueryable().FirstOrDefault(w => w._id == walletId);
                 if (existingWallet == null)
                 {
                     isUnique = true;
@@ -43,10 +44,6 @@ namespace PaymentWall.Controllers
 
         #region List Wallet
 
-        public class _listWalletReq
-        {
-        }
-
         public class _listWalletRes
         {
             [Required]
@@ -55,12 +52,11 @@ namespace PaymentWall.Controllers
             public List<Wallet> wallets { get; set; }
         }
 
-        [HttpPost("list")]
-        public ActionResult<_listWalletRes> ListWalletsByUserId([FromBody] _listWalletReq req)
+        [HttpGet("[action]"), CheckUserLogin]
+        public ActionResult<_listWalletRes> ListWalletsByUserId()
         {
             var _walletCollection = _connectionService.db().GetCollection<Wallet>("Wallet");
 
-            // Oturumdan kullanıcı ID'sini al
             var userIdFromSession = HttpContext.Session.GetString("id");
             if (string.IsNullOrEmpty(userIdFromSession))
             {
@@ -77,7 +73,7 @@ namespace PaymentWall.Controllers
                 return Ok(new _listWalletRes { type = "error", message = "Invalid userId format in session." });
             }
 
-            var userWallets = _walletCollection.Find(wallet => wallet.userId == userIdObj).ToList();
+            var userWallets = _walletCollection.AsQueryable().Where(wallet => wallet.userId == userIdObj).ToList();
 
             if (userWallets == null || userWallets.Count == 0)
             {
@@ -104,7 +100,7 @@ namespace PaymentWall.Controllers
             public string message { get; set; }
         }
 
-        [HttpPost("createWallet")]
+        [HttpPost("[action]"), CheckUserLogin]
         public ActionResult<_createWalletRes> CreateWallet([FromBody] _createWalletReq req)
         {
             var _walletCollection = _connectionService.db().GetCollection<Wallet>("Wallet");
@@ -115,16 +111,16 @@ namespace PaymentWall.Controllers
 
             if (string.IsNullOrEmpty(userIdFromSession))
             {
-                return BadRequest(new _createWalletRes { type = "error", message = "Unauthorized request. User not found in session." });
+                return Ok(new _createWalletRes { type = "error", message = "Unauthorized request. User not found in session." });
             }
 
-            var user = _userCollection.Find(u => u._id.ToString() == userIdFromSession).FirstOrDefault();
+            var user = _userCollection.AsQueryable().FirstOrDefault(u => u._id.ToString() == userIdFromSession);
             if (user == null)
             {
                 return Ok(new _createWalletRes { type = "error", message = "User not found." });
             }
 
-            var existingWallet = _walletCollection.Find(w => w.userId.ToString() == userIdFromSession && w.currency == req.currency).FirstOrDefault();
+            var existingWallet = _walletCollection.AsQueryable().FirstOrDefault(w => w.userId.ToString() == userIdFromSession && w.currency == req.currency);
             if (existingWallet != null)
             {
                 return Ok(new _createWalletRes { type = "error", message = "Wallet with this currency already exists for the user." });

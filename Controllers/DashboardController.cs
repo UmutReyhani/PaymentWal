@@ -4,6 +4,7 @@ using MongoDB.Bson;
 using PaymentWall.Models;
 using PaymentWall.Services;
 using System.Linq;
+using PaymentWall.Attributes;
 
 namespace PaymentWall.Controllers
 {
@@ -21,26 +22,25 @@ namespace PaymentWall.Controllers
 
         public class _walletsResponse
         {
-            public _walletDetails[] Wallets { get; set; }
+            public _walletDetails[] wallets { get; set; }
         }
 
         public class _walletDetails
         {
-            public int WalletId { get; set; }
-            public decimal Balance { get; set; }
-            public string Currency { get; set; }
+            public int walletId { get; set; }
+            public decimal balance { get; set; }
+            public string currency { get; set; }
         }
 
-        [HttpPost("getUserWallets")]
+        [HttpPost("[action]"), CheckUserLogin]
         public ActionResult<_walletsResponse> GetUserWallets()
         {
             var _walletCollection = _connectionService.db().GetCollection<Wallet>("Wallet");
 
-            // Oturumdan kullanıcı ID'sini al
             var userIdFromSession = HttpContext.Session.GetString("id");
             if (string.IsNullOrEmpty(userIdFromSession))
             {
-                return BadRequest(new { message = "User not logged in." });
+                return Ok(new { message = "User not logged in." });
             }
 
             ObjectId userIdObj;
@@ -50,18 +50,18 @@ namespace PaymentWall.Controllers
             }
             catch
             {
-                return BadRequest(new { message = "Invalid userId format in session." });
+                return Ok(new { message = "Invalid userId format in session." });
             }
 
-            var userWallets = _walletCollection.Find(w => w.userId == userIdObj).ToList();
+            var userWallets = _walletCollection.AsQueryable().Where(w => w.userId == userIdObj).ToList();
 
             var walletsResponse = new _walletsResponse
             {
-                Wallets = userWallets.Select(w => new _walletDetails
+                wallets = userWallets.Select(w => new _walletDetails
                 {
-                    WalletId = w._id,
-                    Balance = w.balance,
-                    Currency = w.currency
+                    walletId = w._id,
+                    balance = w.balance,
+                    currency = w.currency
                 }).ToArray()
             };
 
@@ -74,14 +74,14 @@ namespace PaymentWall.Controllers
 
         public class _walletDetailsResponse
         {
-            public string Type { get; set; }
-            public string Message { get; set; }
-            public Wallet WalletInfo { get; set; }
-            public Limit UserLimits { get; set; }
-            public Accounting[] RecentTransactions { get; set; }
+            public string type { get; set; }
+            public string message { get; set; }
+            public Wallet walletInfo { get; set; }
+            public Limit userLimits { get; set; }
+            public Accounting[] recentTransactions { get; set; }
         }
 
-        [HttpPost("getWalletDetails")]
+        [HttpPost("[action]"), CheckUserLogin]
         public ActionResult<_walletDetailsResponse> GetWalletDetails(int walletId)
         {
             var _walletCollection = _connectionService.db().GetCollection<Wallet>("Wallet");
@@ -93,31 +93,34 @@ namespace PaymentWall.Controllers
 
             if (string.IsNullOrEmpty(userIdFromSession))
             {
-                return BadRequest(new { message = "Unauthorized request. User not found in session." });
+                return Ok(new { message = "Unauthorized request. User not found in session." });
             }
 
             var userObjectId = ObjectId.Parse(userIdFromSession);
 
             // Kullanıcıya ait tüm cüzdanları sorgula
-            var userWallets = _walletCollection.Find(w => w.userId == userObjectId).ToList();
+            var userWallets = _walletCollection.AsQueryable().Where(w => w.userId == userObjectId).ToList();
 
             if (!userWallets.Any(w => w._id == walletId))
             {
-                return BadRequest(new { message = "Unauthorized request. This wallet does not belong to the current user." });
+                return Ok(new { message = "Unauthorized request. This wallet does not belong to the current user." });
             }
 
-            var userLimits = _limitCollection.Find(Builders<Limit>.Filter.Empty).FirstOrDefault();
+            var userLimits = _limitCollection.AsQueryable().FirstOrDefault();
 
             // Son 5 işlemi al
-            var recentTransactions = _accountingCollection.Find(a => a.walletId == walletId).SortByDescending(a => a.date).Limit(5).ToList();
-
+            var recentTransactions = _accountingCollection.AsQueryable()
+                .Where(a => a.walletId == walletId)
+                .OrderByDescending(a => a.date)
+                .Take(5)
+                .ToList();
             var walletDetails = new _walletDetailsResponse
             {
-                Type = "success",
-                Message = "Details fetched successfully.",
-                WalletInfo = userWallets.First(w => w._id == walletId),  // Şu anki cüzdanın bilgisi
-                UserLimits = userLimits,
-                RecentTransactions = recentTransactions.ToArray()
+                type = "success",
+                message = "Details fetched successfully.",
+                walletInfo = userWallets.First(w => w._id == walletId),  // Şu anki cüzdanın bilgisi
+                userLimits = userLimits,
+                recentTransactions = recentTransactions.ToArray()
             };
 
             return Ok(walletDetails);

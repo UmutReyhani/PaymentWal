@@ -17,6 +17,12 @@ namespace imageCaptcha.Controllers
 
             //Random sayı
             int num1 = rand.Next(1, 10), num2 = rand.Next(1, 10);
+            if (num2 > num1)
+            {
+                var a = num2;
+                num2 = num1;
+                num1 = a;
+            }
             string[] ops = { "+", "-", "*" };
             string op = ops[rand.Next(0, ops.Length)];
 

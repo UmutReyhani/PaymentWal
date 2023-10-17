@@ -14,5 +14,6 @@ namespace PaymentWall.Models
         public decimal amount { get; set; }
         public string currency { get; set; }
         public string type { get; set; }  // deposit-withdraw
+        public string status { get; set; } // 0(peending) 1 (approved) 2  (rejected)
     }
 }

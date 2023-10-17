@@ -19,6 +19,6 @@ namespace PaymentWall.Models
         public int maxFailedLoginAttempts { get; set; } = 10;
         public string email { get; set; }
         public string phone { get; set; }
-        public string currencyicon { get; set; }
+        public string currencyIcon { get; set; }
     }
 }

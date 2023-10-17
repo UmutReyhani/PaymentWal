@@ -5,6 +5,7 @@ using PaymentWall.Models;
 using PaymentWall.Services;
 using System.ComponentModel.DataAnnotations;
 using MongoDB.Bson.Serialization.Attributes;
+using PaymentWall.Attributes;
 
 namespace PaymentWall.Controllers
 {
@@ -17,73 +18,81 @@ namespace PaymentWall.Controllers
         {
             _connectionService = connectionService;
         }
-
+        #region Transfer Money
         public class _transferRequest
         {
-            [Required]
-            public int senderWalletId { get; set; }
             [Required]
             public int recipientWalletId { get; set; }
             [Required]
             [BsonRepresentation(BsonType.Decimal128)]
-            public decimal Amount { get; set; }
+            public decimal amount { get; set; }
         }
 
         public class _transferResponse
         {
-            public string Type { get; set; } // success / error
-            public string Message { get; set; }
+            public string type { get; set; }
+            public string message { get; set; }
         }
-
-        [HttpPost("transfer")]
+        [CheckUserLogin]
+        [CheckAdminLogin]
+        [HttpPost("[action]")]
         public ActionResult<_transferResponse> TransferFunds([FromBody] _transferRequest transferData)
         {
             var _walletCollection = _connectionService.db().GetCollection<Wallet>("Wallet");
             var _accountingCollection = _connectionService.db().GetCollection<Accounting>("Accounting");
 
-            var sender = _walletCollection.Find(u => u._id == transferData.senderWalletId).FirstOrDefault();
-            var recipient = _walletCollection.Find(u => u._id == transferData.recipientWalletId).FirstOrDefault();
-
-            if (sender == null || recipient == null)
+            var userIdFromSession = HttpContext.Session.GetString("id");
+            if (string.IsNullOrEmpty(userIdFromSession))
             {
-                return Ok(new _transferResponse { Type = "error", Message = "Invalid wallet Id." });
+                return Ok(new _transferResponse { type = "error", message = "User not authenticated." });
             }
 
-            if (sender.currency != recipient.currency)
+            var recipientId = transferData.recipientWalletId;
+            var recipient = _walletCollection.AsQueryable().FirstOrDefault(u => u._id == recipientId);
+            if (recipient == null)
             {
-                return Ok(new _transferResponse { Type = "error", Message = "Please use same currency for transfer." });
+                return Ok(new _transferResponse { type = "error", message = "Recipient wallet not found." });
             }
 
-            if (sender.balance < transferData.Amount)
+            ObjectId userId = ObjectId.Parse(userIdFromSession);
+
+            var sender = _walletCollection.AsQueryable().FirstOrDefault(w => w.userId == userId && w.currency == recipient.currency);
+            if (sender == null)
             {
-                return Ok(new _transferResponse { Type = "error", Message = "Insufficient balance." });
+                return Ok(new _transferResponse { type = "error", message = "Sender wallet not found." });
             }
 
-            sender.balance -= transferData.Amount;
-            _walletCollection.ReplaceOne(u => u._id == sender._id, sender);
+            if (sender.balance < transferData.amount)
+            {
+                return Ok(new _transferResponse { type = "error", message = "Insufficient balance." });
+            }
 
-            recipient.balance += transferData.Amount;
-            _walletCollection.ReplaceOne(u => u._id == recipient._id, recipient);
+            var senderUpdate = Builders<Wallet>.Update.Set(w => w.balance, sender.balance - transferData.amount);//$inc
+            _walletCollection.UpdateOne(u => u._id == sender._id, senderUpdate);
+
+            var recipientUpdate = Builders<Wallet>.Update.Set(w => w.balance, recipient.balance + transferData.amount);
+            _walletCollection.UpdateOne(u => u._id == recipient._id, recipientUpdate);
 
             var senderAccounting = new Accounting
             {
                 userId = sender.userId,
-                amount = -transferData.Amount,
+                amount = -transferData.amount,
                 currency = sender.currency,
-                walletId = transferData.senderWalletId
+                walletId = sender._id
             };
             _accountingCollection.InsertOne(senderAccounting);
 
             var recipientAccounting = new Accounting
             {
                 userId = recipient.userId,
-                amount = transferData.Amount,
+                amount = transferData.amount,
                 currency = recipient.currency,
                 walletId = transferData.recipientWalletId
             };
             _accountingCollection.InsertOne(recipientAccounting);
 
-            return Ok(new _transferResponse { Type = "success", Message = "Transfer completed successfully." });
+            return Ok(new _transferResponse { type = "success", message = "Transfer completed successfully." });
         }
+        #endregion
     }
 }

@@ -7,6 +7,9 @@ using PaymentWall.Services;
 using PaymentWall.User;
 using System.Net.Mail;
 using Microsoft.Extensions.Caching.Memory;
+using PaymentWall.Attributes;
+using System.Reflection;
+using MongoDB.Bson;
 
 namespace PaymentWall.Controllers
 {
@@ -74,7 +77,7 @@ namespace PaymentWall.Controllers
             do
             {
                 walletId = random.Next(10000000, 99999999);
-                var existingWallet = _walletCollection.Find<Wallet>(w => w._id == walletId).FirstOrDefault();
+                var existingWallet = _walletCollection.AsQueryable().FirstOrDefault(w => w._id == walletId);
                 if (existingWallet == null)
                 {
                     isUnique = true;
@@ -82,6 +85,21 @@ namespace PaymentWall.Controllers
             } while (!isUnique);
 
             return walletId;
+        }
+        #endregion
+
+        #region xss checker
+        private bool xssCheck(object data)
+        {
+            foreach (PropertyInfo pi in data.GetType().GetProperties())
+            {
+                var val = Convert.ToString(pi.GetValue(data, null));
+                if (!string.IsNullOrEmpty(val) && (val.Contains("<") | val.Contains(">")))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
         #endregion
 
@@ -122,23 +140,26 @@ namespace PaymentWall.Controllers
             public string message { get; set; }
         }
 
-        [HttpPost("createUser")]
+        [HttpPost("[action]")]
         public ActionResult<_createUserRes> CreateUser([FromBody] _createUserReq data)
         {
+            if (xssCheck (data))
+            {
+                return Ok(new _createUserRes { type = "error", message = " '<' or '>' characters not allowed." });
+            }
             var _userCollection = _connectionService.db().GetCollection<Users>("Users");
             var _addressCollection = _connectionService.db().GetCollection<Address>("Addresses");
             var _walletCollection = _connectionService.db().GetCollection<Wallet>("Wallet");
 
             DateTime today = DateTime.Today;
             int age = today.Year - data.birthDate.Year;
-            if (data.birthDate.Date > today.AddYears(-age)) age--;
 
             if (age < 18)
             {
                 return Ok(new _createUserRes { type = "error", message = "must be at least 18 years old" });
             }
 
-            var existingUserByEmail = _userCollection.Find<Users>(u => u.email == data.email).FirstOrDefault();
+            var existingUserByEmail = _userCollection.AsQueryable().FirstOrDefault(u => u.email == data.email);
 
             if (existingUserByEmail != null)
             {
@@ -224,7 +245,7 @@ namespace PaymentWall.Controllers
             public string type { get; set; }
             public string message { get; set; }
         }
-        [HttpPost("login")]
+        [HttpPost("[action]")]
         public ActionResult<_loginRes> Login([FromBody] _loginReq loginData)
         {
             string userIpAddress = GetUserIpAddress();
@@ -248,7 +269,7 @@ namespace PaymentWall.Controllers
             var userInDb = GetUserFromDb(loginData.email);
             if (userInDb == null)
             {
-                return Ok(new _loginRes { type = "error", message = "Kullanıcı bulunamadı." });
+                return Ok(new _loginRes { type = "error", message = "User not found." });
             }
 
             var siteSettings = GetSiteSettings() ?? new Site { maxFailedLoginAttempts = 5 };
@@ -292,13 +313,13 @@ namespace PaymentWall.Controllers
         private Users GetUserFromDb(string email)
         {
             var _userCollection = _connectionService.db().GetCollection<Users>("Users");
-            return _userCollection.Find<Users>(u => u.email == email).FirstOrDefault();
+            return _userCollection.AsQueryable().FirstOrDefault(u => u.email == email);
         }
 
         private Site GetSiteSettings()
         {
             var _siteCollection = _connectionService.db().GetCollection<Site>("Site");
-            return _siteCollection.Find<Site>(Builders<Site>.Filter.Empty).FirstOrDefault();
+            return _siteCollection.AsQueryable().FirstOrDefault();
         }
 
         private void HandleFailedLogin(Users user, string ip, Site siteSettings)
@@ -312,7 +333,11 @@ namespace PaymentWall.Controllers
             }
 
             var _userCollection = _connectionService.db().GetCollection<Users>("Users");
-            _userCollection.ReplaceOne(u => u._id == user._id, user);
+            var update = Builders<Users>.Update
+                .Set(u => u.failedLoginAttempts, user.failedLoginAttempts)
+                .Set(u => u.status, user.status);
+            _userCollection.UpdateOne(u => u._id == user._id, update);
+
         }
 
         private void HandleSuccessfulLogin(Users user)
@@ -335,7 +360,11 @@ namespace PaymentWall.Controllers
             user.lastLogin = DateTimeOffset.UtcNow;
 
             var _userCollection = _connectionService.db().GetCollection<Users>("Users");
-            _userCollection.ReplaceOne(u => u._id == user._id, user);
+            var update = Builders<Users>.Update
+                .Set(u => u.failedLoginAttempts, user.failedLoginAttempts)
+                .Set(u => u.lastLogin, user.lastLogin);
+
+            _userCollection.UpdateOne(u => u._id == user._id, update);
 
             userFunctions.SetCurrentUserToSession(HttpContext, user);
         }
@@ -363,9 +392,12 @@ namespace PaymentWall.Controllers
             public string message { get; set; }
         }
 
-        [HttpPost("updateUser")]
-        public async Task<ActionResult<_updateUserRes>> UpdateUser([FromBody] _updateUserReq req)
+        [HttpPost("[action]"), CheckUserLogin]
+        public async Task<ActionResult<_updateUserRes>> updateUser([FromBody] _updateUserReq req)
         {
+            if (!config.avaibleCurrencies.Contains("USD")) { 
+            return Ok(req);
+            }
             var userIdFromSession = HttpContext.Session.GetString("id");
             if (string.IsNullOrEmpty(userIdFromSession))
             {
@@ -387,19 +419,20 @@ namespace PaymentWall.Controllers
                 {
                     return Ok(new _updateUserRes { type = "error", message = "Incorrect old password." });
                 }
-
-                existingUser.password = ComputeSha256Hash(req.newPassword);
-                await _userCollection.ReplaceOneAsync(u => u._id == existingUser._id, existingUser);
+                var passwordUpdate = Builders<Users>.Update.Set(u => u.password, ComputeSha256Hash(req.newPassword));
+                await _userCollection.UpdateOneAsync(u => u._id == existingUser._id, passwordUpdate);
             }
 
             var existingAddress = _addressCollection.AsQueryable().FirstOrDefault(a => a.userId == existingUser._id);
             if (existingAddress != null)
             {
-                existingAddress.address = req.address ?? existingAddress.address;
-                existingAddress.city = req.city ?? existingAddress.city;
-                existingAddress.postCode = req.postCode ?? existingAddress.postCode;
-                existingAddress.phoneNumber = req.phoneNumber ?? existingAddress.phoneNumber;
-                await _addressCollection.ReplaceOneAsync(a => a._id == existingAddress._id, existingAddress);
+                var addressUpdate = Builders<Address>.Update
+                    .Set(a => a.address, req.address ?? existingAddress.address)
+                    .Set(a => a.city, req.city ?? existingAddress.city)
+                    .Set(a => a.postCode, req.postCode ?? existingAddress.postCode)
+                    .Set(a => a.phoneNumber, req.phoneNumber ?? existingAddress.phoneNumber);
+
+                await _addressCollection.UpdateOneAsync(a => a._id == existingAddress._id, addressUpdate);
             }
             else
             {
@@ -420,43 +453,6 @@ namespace PaymentWall.Controllers
 
         #endregion
 
-        #region Update User Status
-
-        public class _updateUserStatusReq
-        {
-            [Required]
-            public string userId { get; set; }  // Güncellenecek kullanıcının ID'si
-            [Required]
-            public string status { get; set; }  // 0: passive, 1: active
-        }
-
-        public class _updateUserStatusRes
-        {
-            [Required]
-            public string type { get; set; }
-            public string message { get; set; }
-        }
-
-        [HttpPost("updateUserStatus")]
-        public async Task<ActionResult<_updateUserStatusRes>> UpdateUserStatus([FromBody] _updateUserStatusReq req)
-        {
-            var _userCollection = _connectionService.db().GetCollection<Users>("Users");
-
-            // Kullanıcıyı bul
-            var existingUser = _userCollection.AsQueryable().FirstOrDefault(u => u._id.ToString() == req.userId);
-            if (existingUser == null)
-            {
-                return Ok(new _updateUserStatusRes { type = "error", message = "User not found." });
-            }
-
-            existingUser.status = req.status;
-            await _userCollection.ReplaceOneAsync(u => u._id == existingUser._id, existingUser);
-
-            return Ok(new _updateUserStatusRes { type = "success", message = "User status updated successfully." });
-        }
-
-        #endregion
-
         #region Logout User
         public class _logoutRes
         {
@@ -465,13 +461,34 @@ namespace PaymentWall.Controllers
             public string message { get; set; }
         }
 
-        [HttpPost("logout")]
+        [HttpPost("[action]"), CheckUserLogin]
         public ActionResult<_logoutRes> Logout()
         {
-            userFunctions.ClearCurrentUserFromSession(HttpContext);
+            var userId = HttpContext.Session.GetString("id");
 
+            LogUserAction(userId, "2");
+
+            userFunctions.ClearCurrentUserFromSession(HttpContext);
             return Ok(new _logoutRes { type = "success", message = "Logged out successfully." });
         }
+
+        private void LogUserAction(string userId, string actionType)
+        {
+            var _logCollection = _connectionService.db().GetCollection<Log>("Log");
+
+            var log = new Log
+            {
+                userId = ObjectId.Parse(userId),
+                date = DateTimeOffset.Now,
+                userAgent = HttpContext.Request.Headers["User-Agent"].ToString(),
+                ip = HttpContext.Connection.RemoteIpAddress.ToString(),
+                type = actionType
+            };
+
+            _logCollection.InsertOne(log);
+        }
+
+
         #endregion
 
         //#region forgot pass
@@ -531,5 +548,4 @@ namespace PaymentWall.Controllers
         //#endregion
 
     }
-
 }
