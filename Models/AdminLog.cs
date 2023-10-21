@@ -18,5 +18,9 @@ namespace PaymentWall.Models
         public string reason { get; set; }
         public int role { get; set; }
         public ObjectId adminId { get; set; }
+        public ObjectId? ticketId { get; set; }
+        public int? previousTicketStatus { get; set; }
+        public int? updatedTicketStatus { get; set; }
+
     }
 }

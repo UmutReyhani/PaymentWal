@@ -445,6 +445,96 @@ namespace PaymentWall.Controllers
 
         #endregion
 
+        #region Get All Admins
+
+        public class _getAllAdminsRes
+        {
+            public string type { get; set; }
+            public string message { get; set; }
+            public List<Admin> admins { get; set; }  // Tüm yöneticilerin listesini taşıyacak olan property
+        }
+
+        [HttpGet("[action]")]
+        [CheckAdminLogin(1)]
+        public ActionResult<_getAllAdminsRes> GetAllAdmins()
+        {
+            var _adminCollection = _connectionService.db().GetCollection<Admin>("Admin");
+
+            var adminList = _adminCollection.AsQueryable().ToList();
+
+            if (adminList == null || adminList.Count == 0)
+            {
+                return Ok(new _getAllAdminsRes { type = "error", message = "No admins found." });
+            }
+
+            // Şifrelerin dış dünyaya gönderilmemesi için şifreleri temizleyelim:
+            foreach (var admin in adminList)
+            {
+                admin.password = null;
+            }
+
+            return Ok(new _getAllAdminsRes { type = "success", message = "Admins retrieved successfully.", admins = adminList });
+        }
+
+        #endregion
+
+        #region Update Admin Status
+
+        public class _updateAdminStatusReq
+        {
+            [Required]
+            public string adminId { get; set; }
+            [Required]
+            public int status { get; set; }
+            public string description { get; set; }
+        }
+
+        public class _updateAdminStatusRes
+        {
+            [Required]
+            public string type { get; set; }
+            public string message { get; set; }
+        }
+
+        [HttpPost("[action]")]
+        public async Task<ActionResult<_updateAdminStatusRes>> UpdateAdminStatus([FromBody] _updateAdminStatusReq req)
+        {
+            var _adminCollection = _connectionService.db().GetCollection<Admin>("Admin");
+            var _adminLogCollection = _connectionService.db().GetCollection<AdminLog>("AdminLog");
+
+            var existingAdmin = _adminCollection.AsQueryable().FirstOrDefault(a => a._id.ToString() == req.adminId);
+            if (existingAdmin == null)
+            {
+                return Ok(new _updateAdminStatusRes { type = "error", message = "Admin not found." });
+            }
+
+            var adminIdFromSession = HttpContext.Session.GetString("id");
+            ObjectId adminObjectId = ObjectId.Parse(adminIdFromSession);
+
+            var statusUpdate = Builders<Admin>.Update
+                .Set(a => a.active, req.status);
+
+            var adminLog = new AdminLog
+            {
+                userId = existingAdmin._id,
+                adminId = adminObjectId,
+                previousStatus = existingAdmin.active,
+                updatedStatus = req.status,
+                date = DateTimeOffset.Now,
+                type = 3,
+                userAgent = HttpContext.Request.Headers["User-Agent"].ToString(),
+                ip = HttpContext.Connection.RemoteIpAddress.ToString()
+            };
+            await _adminLogCollection.InsertOneAsync(adminLog);
+
+            await _adminCollection.UpdateOneAsync(a => a._id == existingAdmin._id, statusUpdate);
+
+            return Ok(new _updateAdminStatusRes { type = "success", message = "Admin status updated successfully." });
+        }
+
+
+        #endregion
+
         #region Update User Status
 
         public class _updateUserStatusReq
@@ -507,7 +597,7 @@ namespace PaymentWall.Controllers
         {
             public DateTime? startDate { get; set; }
             public DateTime? endDate { get; set; }
-            public string searchQuery { get; set; }
+            public string? searchQuery { get; set; }
             public int? page { get; set; }
             private int _pageSize = 10;
             public int pageSize
@@ -532,6 +622,7 @@ namespace PaymentWall.Controllers
 
         public class UserDTO
         {
+            public string _id { get; set; }
             public string name { get; set; }
             public string surname { get; set; }
             public DateTime birthDate { get; set; }
@@ -547,7 +638,6 @@ namespace PaymentWall.Controllers
         public ActionResult<GetAllUsersRes> GetAllUsers([FromQuery] GetAllUsersReq req)
         {
             var _userCollection = _connectionService.db().GetCollection<Users>("Users");
-
             IQueryable<Users> queryableUsers = _userCollection.AsQueryable();
 
             if (req.startDate.HasValue && req.endDate.HasValue)
@@ -561,18 +651,22 @@ namespace PaymentWall.Controllers
                                                           u.surname.Contains(req.searchQuery) ||
                                                           u.email.Contains(req.searchQuery));
             }
+
             int totalUsersCount = queryableUsers.Count();
 
-            if (!req.page.HasValue || req.page <= 0 || req.pageSize <= 0)
+            int currentPage = req.page.HasValue && req.page > 0 ? req.page.Value : 1;
+
+            if (currentPage <= 0 || req.pageSize <= 0)
             {
                 return Ok(new GetAllUsersRes { type = "false", message = "Page and pageSize must be provided and greater than 0." });
             }
 
             var users = queryableUsers
-                .Skip((req.page.Value - 1) * req.pageSize)
+                .Skip((currentPage - 1) * req.pageSize)
                 .Take(req.pageSize)
                 .Select(u => new UserDTO
                 {
+                    _id = u._id.ToString(),
                     name = u.name,
                     surname = u.surname,
                     birthDate = u.birthDate,
@@ -685,63 +779,6 @@ namespace PaymentWall.Controllers
                 netBalance = netBalance
             });
         }
-
-        #endregion
-
-        #region Update Admin Status
-
-        public class _updateAdminStatusReq
-        {
-            [Required]
-            public string adminId { get; set; }
-            [Required]
-            public int status { get; set; }
-            public string description { get; set; }
-        }
-
-        public class _updateAdminStatusRes
-        {
-            [Required]
-            public string type { get; set; }
-            public string message { get; set; }
-        }
-
-        [HttpPost("[action]")]
-        public async Task<ActionResult<_updateAdminStatusRes>> UpdateAdminStatus([FromBody] _updateAdminStatusReq req)
-        {
-            var _adminCollection = _connectionService.db().GetCollection<Admin>("Admin");
-            var _adminLogCollection = _connectionService.db().GetCollection<AdminLog>("AdminLog");
-
-            var existingAdmin = _adminCollection.AsQueryable().FirstOrDefault(a => a._id.ToString() == req.adminId);
-            if (existingAdmin == null)
-            {
-                return Ok(new _updateAdminStatusRes { type = "error", message = "Admin not found." });
-            }
-
-            var adminIdFromSession = HttpContext.Session.GetString("id");
-            ObjectId adminObjectId = ObjectId.Parse(adminIdFromSession);
-
-            var statusUpdate = Builders<Admin>.Update
-                .Set(a => a.active, req.status);
-
-            var adminLog = new AdminLog
-            {
-                userId = existingAdmin._id,
-                adminId = adminObjectId,
-                previousStatus = existingAdmin.active,
-                updatedStatus = req.status,
-                date = DateTimeOffset.Now,
-                type = 3,
-                userAgent = HttpContext.Request.Headers["User-Agent"].ToString(),
-                ip = HttpContext.Connection.RemoteIpAddress.ToString()
-            };
-            await _adminLogCollection.InsertOneAsync(adminLog);
-
-            await _adminCollection.UpdateOneAsync(a => a._id == existingAdmin._id, statusUpdate);
-
-            return Ok(new _updateAdminStatusRes { type = "success", message = "Admin status updated successfully." });
-        }
-
 
         #endregion
 
