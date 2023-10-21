@@ -10,8 +10,8 @@ namespace PaymentWall.Models
         public string name { get; set; }
         public string email { get; set; }
         public string password { get; set; }
-        //role admin-person
-        public string active { get; set; } // 0-1 (passive-active)
+        public int role { get; set; }  // 0-person   1-admin
+        public int active { get; set; } // 0-1 (passive-active)
         public int failedLoginAttempts { get; set; } = 0;
         [BsonRepresentation(BsonType.DateTime)]
         public DateTimeOffset lastLogin { get; set; }

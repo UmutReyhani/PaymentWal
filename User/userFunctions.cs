@@ -1,4 +1,5 @@
 ﻿using PaymentWall.Models;
+using System;
 
 namespace PaymentWall.User
 {
@@ -20,9 +21,10 @@ namespace PaymentWall.User
         }
         #endregion
 
-        public static void SetCurrentAdminToSession(HttpContext context, Admin user)
+        #region AdminSession get id 
+        public static void SetCurrentAdminToSession(HttpContext context, Admin admin)
         {
-            context.Session.SetString("id", user._id.ToString());
+            context.Session.SetString("id", admin._id.ToString());
             context.Session.SetString("login", "admin");
         }
         public static void ClearCurrentAdminFromSession(HttpContext context)
@@ -30,5 +32,6 @@ namespace PaymentWall.User
             context.Session.Remove("id");
             context.Session.Clear();
         }
+        #endregion
     }
 }

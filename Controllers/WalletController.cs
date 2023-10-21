@@ -106,7 +106,6 @@ namespace PaymentWall.Controllers
             var _walletCollection = _connectionService.db().GetCollection<Wallet>("Wallet");
             var _userCollection = _connectionService.db().GetCollection<Users>("Users");
 
-            // Oturumdan kullanıcı ID'sini al
             var userIdFromSession = HttpContext.Session.GetString("id");
 
             if (string.IsNullOrEmpty(userIdFromSession))

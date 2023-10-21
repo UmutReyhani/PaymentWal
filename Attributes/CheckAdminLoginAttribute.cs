@@ -5,11 +5,16 @@ using PaymentWall.Models;
 using PaymentWall.Services;
 using MongoDB.Driver;
 
-
 namespace PaymentWall.Attributes
 {
     public class CheckAdminLoginAttribute : Attribute, IAuthorizationFilter
     {
+        public int[] Roles { get; set; }
+        public CheckAdminLoginAttribute(params int[] roles)
+        {
+            Roles = roles;
+        }
+
         public void OnAuthorization(AuthorizationFilterContext context)
         {
             var userIdFromSession = context.HttpContext.Session.GetString("id");
@@ -19,20 +24,31 @@ namespace PaymentWall.Attributes
                 return;
             }
 
-            if (!IsUserAdmin(userIdFromSession, context))
+            if (!IsUserAuthorized(userIdFromSession, context))
             {
-                context.Result = new OkObjectResult(new { type = "error", message = "You are not authorized as an admin" });
+                context.Result = new OkObjectResult(new { type = "error", message = "You are not authorized" });
                 return;
             }
         }
 
-        private bool IsUserAdmin(string userId, AuthorizationFilterContext context)
+        private bool IsUserAuthorized(string userId, AuthorizationFilterContext context)
         {
             var connectionService = (IConnectionService)context.HttpContext.RequestServices.GetService(typeof(IConnectionService));
             var _adminCollection = connectionService.db().GetCollection<Admin>("Admin");
             var adminUser = _adminCollection.AsQueryable().FirstOrDefault(a => a._id == ObjectId.Parse(userId));
-            return adminUser != null;
-        }
 
+            if (adminUser != null)
+            {
+                foreach (var allowedRole in Roles)
+                {
+                    if (adminUser.role == allowedRole)
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
     }
 }

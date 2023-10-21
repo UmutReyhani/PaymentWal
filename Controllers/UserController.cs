@@ -120,7 +120,7 @@ namespace PaymentWall.Controllers
             [Required]
             public string currency { get; set; } //ucu açık
             [Required]
-            public string type { get; set; } // personel-business(0-1)
+            public int type { get; set; } // personel-business(0-1)
             [Required]
             public string address { get; set; }
             [Required]
@@ -166,7 +166,7 @@ namespace PaymentWall.Controllers
                 return Ok(new _createUserRes { type = "error", message = "A user already exists with this mail." });
             }
 
-            if (data.type != "0" && data.type != "1")
+            if (data.type != 0 && data.type != 1)
             {
                 return Ok(new _createUserRes { type = "error", message = "type can only be '0' or '1'." });
             }
@@ -179,7 +179,7 @@ namespace PaymentWall.Controllers
                 email = data.email,
                 password = ComputeSha256Hash(data.password),
                 type = data.type,
-                status = "1",
+                status = 1,
                 verified = false,
                 emailVerified = false,
                 register = DateTimeOffset.UtcNow
@@ -217,7 +217,7 @@ namespace PaymentWall.Controllers
                 date = DateTimeOffset.UtcNow,
                 ip = userIpAddress,
                 userAgent = userAgent,
-                type = "0"
+                type = 0
             };
             var _logCollection = _connectionService.db().GetCollection<Log>("Log");
             _logCollection.InsertOne(userLog);
@@ -274,7 +274,7 @@ namespace PaymentWall.Controllers
 
             var siteSettings = GetSiteSettings() ?? new Site { maxFailedLoginAttempts = 5 };
 
-            if (userInDb.status == "0")
+            if (userInDb.status == 0)
             {
                 return Ok(new _loginRes { type = "error", message = "Your account is inactive." });
             }
@@ -329,7 +329,7 @@ namespace PaymentWall.Controllers
             user.failedLoginAttempts += 1;
             if (user.failedLoginAttempts >= siteSettings.maxFailedLoginAttempts)
             {
-                user.status = "0";
+                user.status = 0;
             }
 
             var _userCollection = _connectionService.db().GetCollection<Users>("Users");
@@ -351,7 +351,7 @@ namespace PaymentWall.Controllers
                 date = DateTimeOffset.UtcNow,
                 ip = GetUserIpAddress(),
                 userAgent = userAgent,
-                type = "1"
+                type = 1
             };
 
             var _logCollection = _connectionService.db().GetCollection<Log>("Log");
@@ -466,13 +466,13 @@ namespace PaymentWall.Controllers
         {
             var userId = HttpContext.Session.GetString("id");
 
-            LogUserAction(userId, "2");
+            LogUserAction(userId, 2);
 
             userFunctions.ClearCurrentUserFromSession(HttpContext);
             return Ok(new _logoutRes { type = "success", message = "Logged out successfully." });
         }
 
-        private void LogUserAction(string userId, string actionType)
+        private void LogUserAction(string userId, int actionType)
         {
             var _logCollection = _connectionService.db().GetCollection<Log>("Log");
 

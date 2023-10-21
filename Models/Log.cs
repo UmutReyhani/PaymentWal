@@ -13,6 +13,6 @@ namespace PaymentWall.Models
         public DateTimeOffset date { get; set; }
         public string userAgent { get; set; }
         public string ip { get; set; }
-        public string type { get; set; }  // register-login-logout(0-1-2)
+        public int type { get; set; }  // register-login-logout(0-1-2)
     }
 }

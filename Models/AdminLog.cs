@@ -12,10 +12,11 @@ namespace PaymentWall.Models
         public DateTimeOffset date { get; set; }
         public string userAgent { get; set; }
         public string ip { get; set; }
-        public string type { get; set; }  // register-login-logout(0-1-2)
-        public string previousStatus { get; set; }
-        public string updatedStatus { get; set; }
+        public int type { get; set; }  // register-login-logout-update-delete(0-1-2-3-4)
+        public int? previousStatus { get; set; }
+        public int updatedStatus { get; set; }
         public string reason { get; set; }
+        public int role { get; set; }
         public ObjectId adminId { get; set; }
     }
 }
