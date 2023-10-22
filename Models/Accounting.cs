@@ -19,5 +19,7 @@ namespace PaymentWall.Models
         public ObjectId? financialId { get; set; }
         [BsonRepresentation(BsonType.DateTime)]
         public DateTimeOffset date { get; set; }
+        public ObjectId recipientUserId { get; set; }
+        public ObjectId senderUserId { get; set; }
     }
 }

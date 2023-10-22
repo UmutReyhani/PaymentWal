@@ -77,7 +77,8 @@ namespace PaymentWall.Controllers
                 userId = sender.userId,
                 amount = -transferData.amount,
                 currency = sender.currency,
-                walletId = sender._id
+                walletId = sender._id,
+                recipientUserId = recipient.userId
             };
             _accountingCollection.InsertOne(senderAccounting);
 
@@ -86,7 +87,8 @@ namespace PaymentWall.Controllers
                 userId = recipient.userId,
                 amount = transferData.amount,
                 currency = recipient.currency,
-                walletId = transferData.recipientWalletId
+                walletId = transferData.recipientWalletId,
+                senderUserId = sender.userId
             };
             _accountingCollection.InsertOne(recipientAccounting);
 
@@ -101,6 +103,7 @@ namespace PaymentWall.Controllers
             public int? pageNumber { get; set; } = 1;
             public DateTime? startDate { get; set; }
             public DateTime? endDate { get; set; }
+            public string walletId { get; set; }
         }
 
         public class _financialReportResponse
@@ -111,6 +114,7 @@ namespace PaymentWall.Controllers
             public decimal totalExpense { get; set; }
             public decimal netBalance { get; set; }
         }
+
         [HttpPost("[action]"), CheckUserLogin]
         public ActionResult<_financialReportResponse> GetUserFinancialReport([FromBody] _financialReportRequest request)
         {
@@ -133,7 +137,23 @@ namespace PaymentWall.Controllers
                 return Ok(new _financialReportResponse { type = "error", message = "Invalid userId format in session." });
             }
 
-            var userWallets = _walletCollection.AsQueryable().Where(wallet => wallet.userId == userIdObj).ToList();
+            if (string.IsNullOrEmpty(request.walletId))
+            {
+                return Ok(new _financialReportResponse { type = "error", message = "WalletId is required." });
+            }
+
+            int walletIdInt;
+            if (!int.TryParse(request.walletId, out walletIdInt))
+            {
+                return Ok(new _financialReportResponse { type = "error", message = "Invalid walletId format." });
+            }
+
+            var wallet = _walletCollection.AsQueryable().FirstOrDefault(w => w._id == walletIdInt);
+
+            if (wallet == null || wallet.userId != userIdObj)
+            {
+                return Ok(new _financialReportResponse { type = "error", message = "Wallet not found or does not belong to user." });
+            }
 
             decimal totalIncome = 0;
             decimal totalExpense = 0;
@@ -141,29 +161,36 @@ namespace PaymentWall.Controllers
 
             var skip = (request.pageNumber.Value - 1) * request.pageSize.Value;
 
-            foreach (var wallet in userWallets)
+            var query = _accountingCollection.AsQueryable().Where(a => a.walletId == wallet._id);
+
+            if (!request.startDate.HasValue && !request.endDate.HasValue)
             {
-                var query = _accountingCollection.AsQueryable().Where(a => a.walletId == wallet._id);
-
-                if (request.startDate.HasValue)
-                {
-                    query = query.Where(a => a.date >= request.startDate.Value);
-                }
-
-                if (request.endDate.HasValue)
-                {
-                    query = query.Where(a => a.date <= request.endDate.Value);
-                }
-
-                var accountingForWallet = query.Skip(skip).Take(request.pageSize.Value).ToList();
-
-                foreach (var entry in accountingForWallet)
-                {
-                    if (entry.amount > 0) totalIncome += entry.amount;
-                    else totalExpense += entry.amount;
-                }
-                netBalance += wallet.balance;
+                request.endDate = DateTime.Now;
+                request.startDate = request.endDate.Value.AddDays(-30);
             }
+            else if (request.startDate.HasValue && !request.endDate.HasValue)
+            {
+                request.endDate = request.startDate.Value.AddDays(30);
+            }
+
+            if (request.startDate.HasValue)
+            {
+                query = query.Where(a => a.date >= request.startDate.Value);
+            }
+
+            if (request.endDate.HasValue)
+            {
+                query = query.Where(a => a.date <= request.endDate.Value);
+            }
+
+            var accountingForWallet = query.Skip(skip).Take(request.pageSize.Value).ToList();
+
+            foreach (var entry in accountingForWallet)
+            {
+                if (entry.amount > 0) totalIncome += entry.amount;
+                else totalExpense += entry.amount;
+            }
+            netBalance += wallet.balance;
 
             return Ok(new _financialReportResponse
             {

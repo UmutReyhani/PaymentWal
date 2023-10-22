@@ -446,28 +446,47 @@ namespace PaymentWall.Controllers
         #endregion
 
         #region Get All Admins
+        public class adminFilterReq
+        {
+            public int? role { get; set; }
+            public int? active { get; set; }
+        }
 
         public class _getAllAdminsRes
         {
             public string type { get; set; }
             public string message { get; set; }
-            public List<Admin> admins { get; set; }  // Tüm yöneticilerin listesini taşıyacak olan property
+            public List<Admin> admins { get; set; }
         }
 
-        [HttpGet("[action]")]
+        [HttpPost("[action]")]
         [CheckAdminLogin(1)]
-        public ActionResult<_getAllAdminsRes> GetAllAdmins()
+        public ActionResult<_getAllAdminsRes> GetAllAdmins([FromBody] adminFilterReq filter)
         {
             var _adminCollection = _connectionService.db().GetCollection<Admin>("Admin");
 
-            var adminList = _adminCollection.AsQueryable().ToList();
+            var query = _adminCollection.AsQueryable();
+
+            if (filter != null)
+            {
+                if (filter.role.HasValue)
+                {
+                    query = query.Where(a => a.role == filter.role.Value);
+                }
+
+                if (filter.active.HasValue)
+                {
+                    query = query.Where(a => a.active == filter.active.Value);
+                }
+            }
+
+            var adminList = query.ToList();
 
             if (adminList == null || adminList.Count == 0)
             {
                 return Ok(new _getAllAdminsRes { type = "error", message = "No admins found." });
             }
 
-            // Şifrelerin dış dünyaya gönderilmemesi için şifreleri temizleyelim:
             foreach (var admin in adminList)
             {
                 admin.password = null;
