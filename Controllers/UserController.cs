@@ -10,6 +10,9 @@ using Microsoft.Extensions.Caching.Memory;
 using PaymentWall.Attributes;
 using System.Reflection;
 using MongoDB.Bson;
+using Microsoft.Extensions.Localization;
+using Microsoft.AspNetCore.Localization;
+using System.Globalization;
 
 namespace PaymentWall.Controllers
 {
@@ -17,10 +20,14 @@ namespace PaymentWall.Controllers
     [ApiController]
     public class UserController : ControllerBase
     {
+
+        private readonly IStringLocalizer _localizer;
+
         private readonly IConnectionService _connectionService;
-        public UserController(IConnectionService connectionService)
+        public UserController(IConnectionService connectionService, IStringLocalizer<UserController> localizer)
         {
             _connectionService = connectionService;
+            _localizer = localizer;
         }
         #region wrongpass
 
@@ -143,9 +150,9 @@ namespace PaymentWall.Controllers
         [HttpPost("[action]")]
         public ActionResult<_createUserRes> CreateUser([FromBody] _createUserReq data)
         {
-            if (xssCheck (data))
+            if (xssCheck(data))
             {
-                return Ok(new _createUserRes { type = "error", message = " '<' or '>' characters not allowed." });
+                return Ok(new _createUserRes { type = "error", message = _localizer["12"] });
             }
             var _userCollection = _connectionService.db().GetCollection<Users>("Users");
             var _addressCollection = _connectionService.db().GetCollection<Address>("Addresses");
@@ -156,19 +163,19 @@ namespace PaymentWall.Controllers
 
             if (age < 18)
             {
-                return Ok(new _createUserRes { type = "error", message = "must be at least 18 years old" });
+                return Ok(new _createUserRes { type = "error", message = _localizer["mustBeAtLeast18"] });
             }
 
             var existingUserByEmail = _userCollection.AsQueryable().FirstOrDefault(u => u.email == data.email);
 
             if (existingUserByEmail != null)
             {
-                return Ok(new _createUserRes { type = "error", message = "A user already exists with this mail." });
+                return Ok(new _createUserRes { type = "error", message = _localizer["userAlreadyExists"] });
             }
 
             if (data.type != 0 && data.type != 1)
             {
-                return Ok(new _createUserRes { type = "error", message = "type can only be '0' or '1'." });
+                return Ok(new _createUserRes { type = "error", message = _localizer["typeCanOnlyBe"] });
             }
 
             Users newUser = new Users
@@ -223,7 +230,7 @@ namespace PaymentWall.Controllers
             _logCollection.InsertOne(userLog);
 
 
-            return Ok(new _createUserRes { type = "success", message = "User created successfully." });
+            return Ok(new _createUserRes { type = "success", message = _localizer["userCreatedSuccessfully"] });
 
         }
         #endregion
@@ -252,43 +259,44 @@ namespace PaymentWall.Controllers
 
             if (IsIpBlockedFromLogin(userIpAddress))
             {
-                return Ok(new _loginRes { type = "error", message = "Your login was disabled 5 minutes." });
+
+                return Ok(new _loginRes { type = "error", message = _localizer["loginDisabled"] });
             }
 
             var correctCaptchaAnswer = HttpContext.Session.GetString("CaptchaAnswer");
             if (loginData.captchaResponse != correctCaptchaAnswer)
             {
-                return Ok(new _loginRes { type = "error", message = "Invalid captcha response." });
+                return Ok(new _loginRes { type = "error", message = _localizer["invalidCaptcha"] });
             }
 
             if (loginData == null || string.IsNullOrEmpty(loginData.email) || string.IsNullOrEmpty(loginData.password))
             {
-                return Ok(new _loginRes { type = "error", message = "mail cant be null" });
+                return Ok(new _loginRes { type = "error", message = _localizer["18"] });
             }
 
             var userInDb = GetUserFromDb(loginData.email);
             if (userInDb == null)
             {
-                return Ok(new _loginRes { type = "error", message = "User not found." });
+                return Ok(new _loginRes { type = "error", message = _localizer["43"].Value });
             }
 
             var siteSettings = GetSiteSettings() ?? new Site { maxFailedLoginAttempts = 5 };
 
             if (userInDb.status == 0)
             {
-                return Ok(new _loginRes { type = "error", message = "Your account is inactive." });
+                return Ok(new _loginRes { type = "error", message = _localizer["accountInactive"] });
             }
 
             if (userInDb.password != ComputeSha256Hash(loginData.password))
             {
                 HandleFailedLogin(userInDb, userIpAddress, siteSettings);
                 HttpContext.Session.Remove("CaptchaAnswer");
-                return Ok(new _loginRes { type = "error", message = "Wrong Password." });
+                return Ok(new _loginRes { type = "error", message = _localizer["wrongPassword"] });
             }
 
             HandleSuccessfulLogin(userInDb);
             HttpContext.Session.Remove("CaptchaAnswer");
-            return Ok(new _loginRes { type = "success", message = "Login Successfull" });
+            return Ok(new _loginRes { type = "success", message = _localizer["loginSuccessful"] });
         }
 
         private string GetUserIpAddress()
@@ -395,13 +403,14 @@ namespace PaymentWall.Controllers
         [HttpPost("[action]"), CheckUserLogin]
         public async Task<ActionResult<_updateUserRes>> updateUser([FromBody] _updateUserReq req)
         {
-            if (!config.avaibleCurrencies.Contains("USD")) { 
-            return Ok(req);
+            if (!config.avaibleCurrencies.Contains("USD"))
+            {
+                return Ok(req);
             }
             var userIdFromSession = HttpContext.Session.GetString("id");
             if (string.IsNullOrEmpty(userIdFromSession))
             {
-                return Ok(new _updateUserRes { type = "error", message = "User not logged in." });
+                return Ok(new _updateUserRes { type = "error", message = _localizer["userNotLoggedIn"] });
             }
 
             var _userCollection = _connectionService.db().GetCollection<Users>("Users");
@@ -410,14 +419,14 @@ namespace PaymentWall.Controllers
             var existingUser = _userCollection.AsQueryable().FirstOrDefault(u => u._id.ToString() == userIdFromSession);
             if (existingUser == null)
             {
-                return Ok(new _updateUserRes { type = "error", message = "User not found." });
+                return Ok(new _updateUserRes { type = "error", message = _localizer["43"].Value });
             }
 
             if (!string.IsNullOrEmpty(req.newPassword))
             {
                 if (ComputeSha256Hash(req.oldPassword) != existingUser.password)
                 {
-                    return Ok(new _updateUserRes { type = "error", message = "Incorrect old password." });
+                    return Ok(new _updateUserRes { type = "error", message = _localizer["incorrectOldPassword"] });
                 }
                 var passwordUpdate = Builders<Users>.Update.Set(u => u.password, ComputeSha256Hash(req.newPassword));
                 await _userCollection.UpdateOneAsync(u => u._id == existingUser._id, passwordUpdate);
@@ -447,7 +456,7 @@ namespace PaymentWall.Controllers
                 await _addressCollection.InsertOneAsync(newAddress);
             }
 
-            return Ok(new _updateUserRes { type = "success", message = "User updated successfully." });
+            return Ok(new _updateUserRes { type = "success", message = _localizer["userUpdatedSuccessfully"] });
         }
 
 
@@ -469,7 +478,7 @@ namespace PaymentWall.Controllers
             LogUserAction(userId, 2);
 
             userFunctions.ClearCurrentUserFromSession(HttpContext);
-            return Ok(new _logoutRes { type = "success", message = "Logged out successfully." });
+            return Ok(new _logoutRes { type = "success", message = _localizer["loggedOutSuccessfully"] });
         }
 
         private void LogUserAction(string userId, int actionType)
@@ -546,6 +555,39 @@ namespace PaymentWall.Controllers
         //}
 
         //#endregion
+
+        #region setCulture
+        public class _setCulture
+        {
+            [Required, MaxLength(2)]
+            public string lan { get; set; }
+        }
+        [Route("[action]"), HttpPost]
+        public IActionResult setCulture([FromBody] _setCulture culture)
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(culture.lan))
+                {
+                    if (config.supportedCultures.Contains(new CultureInfo(culture.lan)) && config.supportedCultures.Contains(new CultureInfo(culture.lan)))
+                    {
+                        HttpContext.Response.Cookies.Append(
+                          CookieRequestCultureProvider.DefaultCookieName,
+                          CookieRequestCultureProvider.MakeCookieValue(new RequestCulture(culture.lan)),
+                          new CookieOptions
+                          {
+                              Expires = DateTimeOffset.UtcNow.AddDays(1),
+                              IsEssential = true,
+                              HttpOnly = true
+                          }
+                          );
+                    }
+                }
+            }
+            catch { }
+            return Ok();
+        }
+        #endregion
 
     }
 }

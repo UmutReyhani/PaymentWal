@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "4/oxL2FMBcRyIm7IzhLNIKb105tjl/7ykf7qKksA8Ii6dU/eYNshiefKVacrf3lsHAlnGPJZkwAggI5YxXtkeg==",
+  "dgSpecHash": "+u3xQxAdb0wO5mGz6FxvJhjRlpOFnI8TfI3YC0BPIeh2jZmbkKDTS6QBc4ZRlCuytp6Jecbt3whswY1BXYD3Bw==",
   "success": true,
   "projectFilePath": "C:\\Users\\ASUS\\source\\repos\\PaymentWall\\PaymentWall.csproj",
   "expectedPackageFiles": [
@@ -17,6 +17,7 @@
     "C:\\Users\\ASUS\\.nuget\\packages\\mongodb.driver\\2.21.0\\mongodb.driver.2.21.0.nupkg.sha512",
     "C:\\Users\\ASUS\\.nuget\\packages\\mongodb.driver.core\\2.21.0\\mongodb.driver.core.2.21.0.nupkg.sha512",
     "C:\\Users\\ASUS\\.nuget\\packages\\mongodb.libmongocrypt\\1.8.0\\mongodb.libmongocrypt.1.8.0.nupkg.sha512",
+    "C:\\Users\\ASUS\\.nuget\\packages\\newtonsoft.json\\13.0.3\\newtonsoft.json.13.0.3.nupkg.sha512",
     "C:\\Users\\ASUS\\.nuget\\packages\\sharpcompress\\0.30.1\\sharpcompress.0.30.1.nupkg.sha512",
     "C:\\Users\\ASUS\\.nuget\\packages\\snappier\\1.0.0\\snappier.1.0.0.nupkg.sha512",
     "C:\\Users\\ASUS\\.nuget\\packages\\swashbuckle.aspnetcore\\6.2.3\\swashbuckle.aspnetcore.6.2.3.nupkg.sha512",

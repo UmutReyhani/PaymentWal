@@ -5,6 +5,7 @@ using PaymentWall.Models;
 using PaymentWall.Services;
 using System.Linq;
 using PaymentWall.Attributes;
+using Microsoft.Extensions.Localization;
 
 namespace PaymentWall.Controllers
 {
@@ -13,9 +14,12 @@ namespace PaymentWall.Controllers
     public class DashboardController : ControllerBase
     {
         private readonly IConnectionService _connectionService;
-        public DashboardController(IConnectionService connectionService)
+        private readonly IStringLocalizer _localizer;
+
+        public DashboardController(IConnectionService connectionService, IStringLocalizer<UserController> localizer)
         {
             _connectionService = connectionService;
+            _localizer = localizer;
         }
 
         #region User Wallets
@@ -40,7 +44,7 @@ namespace PaymentWall.Controllers
             var userIdFromSession = HttpContext.Session.GetString("id");
             if (string.IsNullOrEmpty(userIdFromSession))
             {
-                return Ok(new { message = "User not logged in." });
+                return Ok(new { message = _localizer["53"] });
             }
 
             ObjectId userIdObj;
@@ -50,7 +54,7 @@ namespace PaymentWall.Controllers
             }
             catch
             {
-                return Ok(new { message = "Invalid userId format in session." });
+                return Ok(new { message = _localizer["54"] });
             }
 
             var userWallets = _walletCollection.AsQueryable().Where(w => w.userId == userIdObj).ToList();
@@ -88,27 +92,24 @@ namespace PaymentWall.Controllers
             var _limitCollection = _connectionService.db().GetCollection<Limit>("Limit");
             var _accountingCollection = _connectionService.db().GetCollection<Accounting>("Accounting");
 
-            // Oturumdan kullanıcı ID'sini al
             var userIdFromSession = HttpContext.Session.GetString("id");
 
             if (string.IsNullOrEmpty(userIdFromSession))
             {
-                return Ok(new { message = "Unauthorized request. User not found in session." });
+                return Ok(new { message = _localizer["55"] });
             }
 
             var userObjectId = ObjectId.Parse(userIdFromSession);
 
-            // Kullanıcıya ait tüm cüzdanları sorgula
             var userWallets = _walletCollection.AsQueryable().Where(w => w.userId == userObjectId).ToList();
 
             if (!userWallets.Any(w => w._id == walletId))
             {
-                return Ok(new { message = "Unauthorized request. This wallet does not belong to the current user." });
+                return Ok(new { message = _localizer["56"] });
             }
 
             var userLimits = _limitCollection.AsQueryable().FirstOrDefault();
 
-            // Son 5 işlemi al
             var recentTransactions = _accountingCollection.AsQueryable()
                 .Where(a => a.walletId == walletId)
                 .OrderByDescending(a => a.date)
@@ -118,7 +119,7 @@ namespace PaymentWall.Controllers
             {
                 type = "success",
                 message = "Details fetched successfully.",
-                walletInfo = userWallets.First(w => w._id == walletId),  // Şu anki cüzdanın bilgisi
+                walletInfo = userWallets.First(w => w._id == walletId),
                 userLimits = userLimits,
                 recentTransactions = recentTransactions.ToArray()
             };

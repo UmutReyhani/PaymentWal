@@ -1,5 +1,6 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Localization;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using MongoDB.Driver.Linq;
@@ -20,10 +21,12 @@ namespace PaymentWall.Controllers
     public class AdminController : ControllerBase
     {
         private readonly IConnectionService _connectionService;
+        private readonly IStringLocalizer _localizer;
 
-        public AdminController(IConnectionService connectionService)
+        public AdminController(IConnectionService connectionService, IStringLocalizer<UserController> localizer)
         {
             _connectionService = connectionService;
+            _localizer = localizer;
         }
 
         #region wrongpass
@@ -96,7 +99,7 @@ namespace PaymentWall.Controllers
             [Required]
             public string password { get; set; }
             [Required]
-            public int role { get; set; } // Eklenen role alanı
+            public int role { get; set; }
         }
 
         public class _createAdminRes
@@ -111,7 +114,7 @@ namespace PaymentWall.Controllers
         {
             if (xssCheck(data))
             {
-                return Ok(new _createAdminRes { type = "error", message = " '<' or '>' characters not allowed." });
+                return Ok(new _createAdminRes { type = "error", message = _localizer["12"].Value });
             }
             var _adminCollection = _connectionService.db().GetCollection<Admin>("Admin");
 
@@ -119,7 +122,7 @@ namespace PaymentWall.Controllers
 
             if (existingAdminByEmail != null)
             {
-                return Ok(new _createAdminRes { type = "error", message = "An admin already exists with this email." });
+                return Ok(new _createAdminRes { type = "error", message = _localizer["13"].Value });
             }
 
             Admin newAdmin = new Admin
@@ -127,7 +130,7 @@ namespace PaymentWall.Controllers
                 name = data.name,
                 email = data.email,
                 password = ComputeSha256Hash(data.password),
-                role = data.role, // Yeni eklenen role alanı
+                role = data.role,
                 active = 1,
                 lastLogin = DateTimeOffset.UtcNow,
                 failedLoginAttempts = 0
@@ -146,14 +149,14 @@ namespace PaymentWall.Controllers
                 type = 0,
                 previousStatus = null,
                 updatedStatus = 1,
-                reason = "Admin or Person Registration",
+                reason = _localizer["14"].Value,
                 role = data.role,
                 adminId = newAdmin._id
             };
             var _adminLogCollection = _connectionService.db().GetCollection<AdminLog>("AdminLog");
             _adminLogCollection.InsertOne(adminLog);
 
-            return Ok(new _createAdminRes { type = "success", message = "Admin created successfully." });
+            return Ok(new _createAdminRes { type = "success", message = _localizer["15"].Value });
         }
         #endregion
 
@@ -183,31 +186,31 @@ namespace PaymentWall.Controllers
 
             if (IsIpBlockedFromLogin(adminIpAddress))
             {
-                return Ok(new _adminLoginRes { type = "error", message = "Your login was disabled 5 minutes." });
+                return Ok(new _adminLoginRes { type = "error", message = _localizer["16"].Value });
             }
 
             var correctCaptchaAnswer = HttpContext.Session.GetString("CaptchaAnswer");
             if (loginData.captchaResponse != correctCaptchaAnswer)
             {
-                return Ok(new _adminLoginRes { type = "error", message = "Invalid captcha response." });
+                return Ok(new _adminLoginRes { type = "error", message = _localizer["17"].Value });
             }
 
             if (loginData == null || string.IsNullOrEmpty(loginData.email) || string.IsNullOrEmpty(loginData.password))
             {
-                return Ok(new _adminLoginRes { type = "error", message = "mail cant be null" });
+                return Ok(new _adminLoginRes { type = "error", message = _localizer["18"].Value });
             }
 
             var adminInDb = GetAdminFromDb(loginData.email);
             if (adminInDb == null)
             {
-                return Ok(new _adminLoginRes { type = "error", message = "Admin not found." });
+                return Ok(new _adminLoginRes { type = "error", message = _localizer["19"].Value });
             }
 
             var siteSettings = GetSiteSettings() ?? new Site { maxFailedLoginAttempts = 5 };
 
             if (adminInDb.active == 0)
             {
-                return Ok(new _adminLoginRes { type = "error", message = "Your account is inactive." });
+                return Ok(new _adminLoginRes { type = "error", message = _localizer["20"].Value });
             }
 
 
@@ -215,12 +218,12 @@ namespace PaymentWall.Controllers
             {
                 HandleFailedAdminLogin(adminInDb, adminIpAddress);
                 HttpContext.Session.Remove("CaptchaAnswer");
-                return Ok(new _adminLoginRes { type = "error", message = "Wrong Password." });
+                return Ok(new _adminLoginRes { type = "error", message = _localizer["21"].Value });
             }
 
             HandleSuccessfulAdminLogin(adminInDb);
             HttpContext.Session.Remove("CaptchaAnswer");
-            return Ok(new _adminLoginRes { type = "success", message = "Login Successfull" });
+            return Ok(new _adminLoginRes { type = "success", message = _localizer["22"].Value });
         }
         private string GetUserIpAddress()
         {
@@ -254,15 +257,9 @@ namespace PaymentWall.Controllers
 
         private void HandleFailedAdminLogin(Admin admin, string ip)
         {
-            // Admin için hatalı oturum açma işlemini işle
-            // Örneğin, hatalı giriş sayısını artırabilir veya IP adresini engelleyebilirsiniz.
-            // Bu işlevsellik için 'HandleFailedLogin' fonksiyonundan yararlanabilirsiniz.
-            // Aşağıdaki kodu gerektiği şekilde uyarlamalısınız.
-
             wrongPassword(ip, true);
 
-            admin.failedLoginAttempts += 1; // Eğer Admin modelinizde failedLoginAttempts gibi bir özellik yoksa, bu satırı düzenlemelisiniz.
-                                            // Eğer belirli bir sayıda hatalı girişten sonra admini engellemek istiyorsanız bu kısmı uygulayabilirsiniz.
+            admin.failedLoginAttempts += 1;                                  
 
             var _adminCollection = _connectionService.db().GetCollection<Admin>("Admin");
             var update = Builders<Admin>.Update
@@ -318,7 +315,7 @@ namespace PaymentWall.Controllers
             LogAdminAction(userId, 2);
 
             userFunctions.ClearCurrentAdminFromSession(HttpContext);
-            return Ok(new _logoutRes { type = "success", message = "Admin logged out successfully." });
+            return Ok(new _logoutRes { type = "success", message = _localizer["23"].Value });
         }
         private void LogAdminAction(string userId, int actionType)
         {
@@ -365,14 +362,14 @@ namespace PaymentWall.Controllers
 
             if (adminToDelete == null)
             {
-                return Ok(new _deleteAdminRes { type = "error", message = "Admin not found." });
+                return Ok(new _deleteAdminRes { type = "error", message = _localizer["24"].Value });
             }
 
             await LogAdminDeletion(adminIdToDelete.ToString(), HttpContext.Session.GetString("id"));
 
             _adminCollection.DeleteOne(admin => admin._id == adminIdToDelete);
 
-            return Ok(new _deleteAdminRes { type = "success", message = "Admin deleted successfully." });
+            return Ok(new _deleteAdminRes { type = "success", message = _localizer["25"].Value });
 
         }
 
@@ -421,7 +418,7 @@ namespace PaymentWall.Controllers
             var adminIdFromSession = HttpContext.Session.GetString("adminId");
             if (string.IsNullOrEmpty(adminIdFromSession))
             {
-                return Ok(new _updateAdminPasswordRes { type = "error", message = "Admin not logged in." });
+                return Ok(new _updateAdminPasswordRes { type = "error", message = _localizer["27"].Value });
             }
 
             var _adminCollection = _connectionService.db().GetCollection<Admin>("Admins");
@@ -429,18 +426,18 @@ namespace PaymentWall.Controllers
             var existingAdmin = _adminCollection.AsQueryable().FirstOrDefault(a => a._id.ToString() == adminIdFromSession);
             if (existingAdmin == null)
             {
-                return Ok(new _updateAdminPasswordRes { type = "error", message = "Admin not found." });
+                return Ok(new _updateAdminPasswordRes { type = "error", message = _localizer["28"].Value });
             }
 
             if (ComputeSha256Hash(req.oldPassword) != existingAdmin.password)
             {
-                return Ok(new _updateAdminPasswordRes { type = "error", message = "Incorrect old password." });
+                return Ok(new _updateAdminPasswordRes { type = "error", message = _localizer["29"].Value });
             }
 
             var passwordUpdate = Builders<Admin>.Update.Set(a => a.password, ComputeSha256Hash(req.newPassword));
             await _adminCollection.UpdateOneAsync(a => a._id == existingAdmin._id, passwordUpdate);
 
-            return Ok(new _updateAdminPasswordRes { type = "success", message = "Password updated successfully." });
+            return Ok(new _updateAdminPasswordRes { type = "success", message = _localizer["30"].Value });
         }
 
         #endregion
@@ -484,7 +481,7 @@ namespace PaymentWall.Controllers
 
             if (adminList == null || adminList.Count == 0)
             {
-                return Ok(new _getAllAdminsRes { type = "error", message = "No admins found." });
+                return Ok(new _getAllAdminsRes { type = "error", message = _localizer["31"].Value });
             }
 
             foreach (var admin in adminList)
@@ -492,7 +489,7 @@ namespace PaymentWall.Controllers
                 admin.password = null;
             }
 
-            return Ok(new _getAllAdminsRes { type = "success", message = "Admins retrieved successfully.", admins = adminList });
+            return Ok(new _getAllAdminsRes { type = "success", message = _localizer["32"].Value, admins = adminList });
         }
 
         #endregion
@@ -524,7 +521,7 @@ namespace PaymentWall.Controllers
             var existingAdmin = _adminCollection.AsQueryable().FirstOrDefault(a => a._id.ToString() == req.adminId);
             if (existingAdmin == null)
             {
-                return Ok(new _updateAdminStatusRes { type = "error", message = "Admin not found." });
+                return Ok(new _updateAdminStatusRes { type = "error", message = _localizer["41"].Value });
             }
 
             var adminIdFromSession = HttpContext.Session.GetString("id");
@@ -548,7 +545,7 @@ namespace PaymentWall.Controllers
 
             await _adminCollection.UpdateOneAsync(a => a._id == existingAdmin._id, statusUpdate);
 
-            return Ok(new _updateAdminStatusRes { type = "success", message = "Admin status updated successfully." });
+            return Ok(new _updateAdminStatusRes { type = "success", message = _localizer["42"].Value });
         }
 
 
@@ -559,7 +556,7 @@ namespace PaymentWall.Controllers
         public class _updateUserStatusReq
         {
             [Required]
-            public string userId { get; set; }  // Güncellenecek kullanıcının ID'si
+            public string userId { get; set; }
             [Required]
             public int status { get; set; }  // 0: passive, 1: active 2: banned
             public string description { get; set; }  // Açıklama veya sebep
@@ -582,7 +579,7 @@ namespace PaymentWall.Controllers
             var existingUser = _userCollection.AsQueryable().FirstOrDefault(u => u._id.ToString() == req.userId);
             if (existingUser == null)
             {
-                return Ok(new _updateUserStatusRes { type = "error", message = "User not found." });
+                return Ok(new _updateUserStatusRes { type = "error", message = _localizer["43"].Value });
             }
 
             var adminIdFromSession = HttpContext.Session.GetString("id");
@@ -606,7 +603,7 @@ namespace PaymentWall.Controllers
 
             await _userCollection.UpdateOneAsync(u => u._id == existingUser._id, statusUpdate);
 
-            return Ok(new _updateUserStatusRes { type = "success", message = "User status updated successfully." });
+            return Ok(new _updateUserStatusRes { type = "success", message = _localizer["44"].Value });
         }
         #endregion
 
@@ -677,7 +674,7 @@ namespace PaymentWall.Controllers
 
             if (currentPage <= 0 || req.pageSize <= 0)
             {
-                return Ok(new GetAllUsersRes { type = "false", message = "Page and pageSize must be provided and greater than 0." });
+                return Ok(new GetAllUsersRes { type = "false", message = _localizer["45"] });
             }
 
             var users = queryableUsers
@@ -738,14 +735,14 @@ namespace PaymentWall.Controllers
 
             if (string.IsNullOrEmpty(request.email))
             {
-                return Ok(new _adminFinancialReportResponse { type = "error", message = "Email is required." });
+                return Ok(new _adminFinancialReportResponse { type = "error", message = _localizer["46"] });
             }
 
             var user = _userCollection.AsQueryable().FirstOrDefault(u => u.email == request.email);
 
             if (user == null)
             {
-                return Ok(new _adminFinancialReportResponse { type = "error", message = "User with the provided email does not exist." });
+                return Ok(new _adminFinancialReportResponse { type = "error", message = _localizer["47"] });
             }
 
             var userWallets = _walletCollection.AsQueryable().Where(wallet => wallet.userId == user._id).ToList();
@@ -900,21 +897,19 @@ namespace PaymentWall.Controllers
 
             if (walletToDelete == null)
             {
-                return Ok(new _deleteWalletRes { type = "error", message = "Wallet not found for the specified user." });
+                return Ok(new _deleteWalletRes { type = "error", message = _localizer["48"] });
             }
 
-            // 2. Wallet'i silme işlemini gerçekleştirin
             _walletCollection.DeleteOne(wallet => wallet._id == walletIdToDelete);
 
-            return Ok(new _deleteWalletRes { type = "success", message = "Wallet deleted successfully." });
+            return Ok(new _deleteWalletRes { type = "success", message = _localizer["49"] });
         }
         #endregion
 
-        #region Create Limit
+        #region deposit Limit create
 
         public class _setLimitReq
         {
-            public string userId { get; set; }
             public decimal maxDeposit { get; set; }
             public decimal minDeposit { get; set; }
             public decimal dailyMaxDeposit { get; set; }
@@ -929,6 +924,7 @@ namespace PaymentWall.Controllers
         }
 
         [HttpPost("[action]")]
+        [CheckAdminLogin(1)]
         public ActionResult<_limitRes> AddLimit([FromBody] _setLimitReq req)
         {
             var _limitCollection = _connectionService.db().GetCollection<Limit>("Limit");
@@ -940,34 +936,229 @@ namespace PaymentWall.Controllers
                 monthlyMaxDeposit = req.monthlyMaxDeposit
             };
             _limitCollection.InsertOne(newLimit);
-            return Ok(new _limitRes { type = "success", message = "Limit added successfully." });
+            return Ok(new _limitRes { type = "success", message = _localizer["50"] });
         }
 
         #endregion
 
-        #region Update Limit
+        #region Update Deposit Limit
 
-        public class _updateLimitReq : _setLimitReq
+        public class _updateLimitReq
         {
             [Required]
-            public string limitId { get; set; } // Güncellenecek limitin ID'si
+            public string limitId { get; set; }
+            public decimal? maxDeposit { get; set; }
+            public decimal? minDeposit { get; set; }
+            public decimal? dailyMaxDeposit { get; set; }
+            public decimal? monthlyMaxDeposit { get; set; }
+        }
+
+        [HttpPost("UpdateLimit")]
+        [CheckAdminLogin(1)]
+        public async Task<ActionResult<_limitRes>> UpdateLimit([FromBody] _updateLimitReq req)
+        {
+            var _limitCollection = _connectionService.db().GetCollection<Limit>("Limit");
+            var _adminLogCollection = _connectionService.db().GetCollection<AdminLog>("AdminLog");
+            var existingLimit = _limitCollection.AsQueryable().FirstOrDefault(l => l._id.ToString() == req.limitId);
+
+            if (existingLimit == null)
+            {
+                return Ok(new _limitRes { type = "error", message = _localizer["51"] });
+            }
+
+            var update = Builders<Limit>.Update;
+            var updates = new List<UpdateDefinition<Limit>>();
+
+            if (req.maxDeposit.HasValue) updates.Add(update.Set(l => l.maxDeposit, req.maxDeposit.Value));
+            if (req.minDeposit.HasValue) updates.Add(update.Set(l => l.minDeposit, req.minDeposit.Value));
+            if (req.dailyMaxDeposit.HasValue) updates.Add(update.Set(l => l.dailyMaxDeposit, req.dailyMaxDeposit.Value));
+            if (req.monthlyMaxDeposit.HasValue) updates.Add(update.Set(l => l.monthlyMaxDeposit, req.monthlyMaxDeposit.Value));
+
+            var combinedUpdate = update.Combine(updates);
+            await _limitCollection.UpdateOneAsync(l => l._id == existingLimit._id, combinedUpdate);
+
+            var adminIdFromSession = HttpContext.Session.GetString("id");
+            ObjectId adminObjectId = ObjectId.Parse(adminIdFromSession);
+            var adminLog = new AdminLog
+            {
+                reason = "Updated Deposit Limit",
+                adminId = adminObjectId,
+                date = DateTimeOffset.Now,
+                type = 4,
+                userAgent = HttpContext.Request.Headers["User-Agent"].ToString(),
+                ip = HttpContext.Connection.RemoteIpAddress.ToString()
+            };
+            await _adminLogCollection.InsertOneAsync(adminLog);
+
+            return Ok(new _limitRes { type = "success", message = _localizer["52"] });
+        }
+
+        #endregion
+
+        #region Withdrawal Limit create
+
+        public class _setWithdrawalLimitReq
+        {
+            public decimal maxWithdrawal { get; set; }
+            public decimal minWithdrawal { get; set; }
+            public decimal dailyMaxWithdrawal { get; set; }
+            public decimal monthlyMaxWithdrawal { get; set; }
         }
 
         [HttpPost("[action]")]
-        public ActionResult<_limitRes> UpdateLimit([FromBody] _updateLimitReq req)
+        public ActionResult<_limitRes> AddWithdrawalLimit([FromBody] _setWithdrawalLimitReq req)
         {
             var _limitCollection = _connectionService.db().GetCollection<Limit>("Limit");
-            var update = Builders<Limit>.Update
-                .Set(l => l.maxDeposit, req.maxDeposit)
-                .Set(l => l.minDeposit, req.minDeposit)
-                .Set(l => l.dailyMaxDeposit, req.dailyMaxDeposit)
-                .Set(l => l.monthlyMaxDeposit, req.monthlyMaxDeposit);
-            _limitCollection.UpdateOne(l => l._id == ObjectId.Parse(req.limitId), update);
-            return Ok(new _limitRes { type = "success", message = "Limit updated successfully." });
+            var newLimit = new Limit
+            {
+                maxWithdrawal = req.maxWithdrawal,
+                minWithdrawal = req.minWithdrawal,
+                dailyMaxWithdrawal = req.dailyMaxWithdrawal,
+                monthlyMaxWithdrawal = req.monthlyMaxWithdrawal
+            };
+            _limitCollection.InsertOne(newLimit);
+            return Ok(new _limitRes { type = "success", message = _localizer["50"] });
         }
 
         #endregion
 
+        #region Update Withdrawal Limit
 
+        public class _updateWithdrawalLimitReq
+        {
+            [Required]
+            public string limitId { get; set; }
+            public decimal? maxWithdrawal { get; set; }
+            public decimal? minWithdrawal { get; set; }
+            public decimal? dailyMaxWithdrawal { get; set; }
+            public decimal? monthlyMaxWithdrawal { get; set; }
+        }
+
+        [HttpPost("UpdateWithdrawalLimit")]
+        [CheckAdminLogin(1)]
+        public async Task<ActionResult<_limitRes>> UpdateWithdrawalLimit([FromBody] _updateWithdrawalLimitReq req)
+        {
+            var _limitCollection = _connectionService.db().GetCollection<Limit>("Limit");
+            var _adminLogCollection = _connectionService.db().GetCollection<AdminLog>("AdminLog");
+            var existingLimit = _limitCollection.AsQueryable().FirstOrDefault(l => l._id.ToString() == req.limitId);
+
+            if (existingLimit == null)
+            {
+                return Ok(new _limitRes { type = "error", message = _localizer["51"] });
+            }
+
+            var update = Builders<Limit>.Update;
+            var updates = new List<UpdateDefinition<Limit>>();
+
+            if (req.maxWithdrawal.HasValue) updates.Add(update.Set(l => l.maxWithdrawal, req.maxWithdrawal.Value));
+            if (req.minWithdrawal.HasValue) updates.Add(update.Set(l => l.minWithdrawal, req.minWithdrawal.Value));
+            if (req.dailyMaxWithdrawal.HasValue) updates.Add(update.Set(l => l.dailyMaxWithdrawal, req.dailyMaxWithdrawal.Value));
+            if (req.monthlyMaxWithdrawal.HasValue) updates.Add(update.Set(l => l.monthlyMaxWithdrawal, req.monthlyMaxWithdrawal.Value));
+
+            var combinedUpdate = update.Combine(updates);
+            await _limitCollection.UpdateOneAsync(l => l._id == existingLimit._id, combinedUpdate);
+
+            var adminIdFromSession = HttpContext.Session.GetString("id");
+            ObjectId adminObjectId = ObjectId.Parse(adminIdFromSession);
+            var adminLog = new AdminLog
+            {
+                reason = "Updated Withdrawal Limit",
+                adminId = adminObjectId,
+                date = DateTimeOffset.Now,
+                type = 5,
+                userAgent = HttpContext.Request.Headers["User-Agent"].ToString(),
+                ip = HttpContext.Connection.RemoteIpAddress.ToString()
+            };
+            await _adminLogCollection.InsertOneAsync(adminLog);
+
+            return Ok(new _limitRes { type = "success", message = _localizer["52"] });
+        }
+
+        #endregion
+
+        #region Transfer Limit create
+
+        public class _setTransferLimitReq
+        {
+            public decimal maxTransfer { get; set; }
+            public decimal minTransfer { get; set; }
+            public decimal dailyMaxTransfer { get; set; }
+            public decimal monthlyMaxTransfer { get; set; }
+            public int dailyMaxTransferCount { get; set; }
+        }
+
+        [HttpPost("[action]")]
+        public ActionResult<_limitRes> AddTransferLimit([FromBody] _setTransferLimitReq req)
+        {
+            var _limitCollection = _connectionService.db().GetCollection<Limit>("Limit");
+            var newLimit = new Limit
+            {
+                maxTransfer = req.maxTransfer,
+                minTransfer = req.minTransfer,
+                dailyMaxTransfer = req.dailyMaxTransfer,
+                monthlyMaxTransfer = req.monthlyMaxTransfer,
+                dailyMaxTransferCount = req.dailyMaxTransferCount
+            };
+            _limitCollection.InsertOne(newLimit);
+            return Ok(new _limitRes { type = "success", message = _localizer["50"] });
+        }
+
+        #endregion
+
+        #region Update Transfer Limit
+
+        public class _updateTransferLimitReq
+        {
+            [Required]
+            public string limitId { get; set; }
+            public decimal? maxTransfer { get; set; }
+            public decimal? minTransfer { get; set; }
+            public decimal? dailyMaxTransfer { get; set; }
+            public decimal? monthlyMaxTransfer { get; set; }
+            public int? dailyMaxTransferCount { get; set; }
+        }
+
+        [HttpPost("UpdateTransferLimit")]
+        [CheckAdminLogin(1)]
+        public async Task<ActionResult<_limitRes>> UpdateTransferLimit([FromBody] _updateTransferLimitReq req)
+        {
+            var _limitCollection = _connectionService.db().GetCollection<Limit>("Limit");
+            var _adminLogCollection = _connectionService.db().GetCollection<AdminLog>("AdminLog");
+            var existingLimit = _limitCollection.AsQueryable().FirstOrDefault(l => l._id.ToString() == req.limitId);
+
+            if (existingLimit == null)
+            {
+                return Ok(new _limitRes { type = "error", message = _localizer["51"] });
+            }
+
+            var update = Builders<Limit>.Update;
+            var updates = new List<UpdateDefinition<Limit>>();
+
+            if (req.maxTransfer.HasValue) updates.Add(update.Set(l => l.maxTransfer, req.maxTransfer.Value));
+            if (req.minTransfer.HasValue) updates.Add(update.Set(l => l.minTransfer, req.minTransfer.Value));
+            if (req.dailyMaxTransfer.HasValue) updates.Add(update.Set(l => l.dailyMaxTransfer, req.dailyMaxTransfer.Value));
+            if (req.monthlyMaxTransfer.HasValue) updates.Add(update.Set(l => l.monthlyMaxTransfer, req.monthlyMaxTransfer.Value));
+            if (req.dailyMaxTransferCount.HasValue) updates.Add(update.Set(l => l.dailyMaxTransferCount, req.dailyMaxTransferCount.Value));
+
+            var combinedUpdate = update.Combine(updates);
+            await _limitCollection.UpdateOneAsync(l => l._id == existingLimit._id, combinedUpdate);
+
+            var adminIdFromSession = HttpContext.Session.GetString("id");
+            ObjectId adminObjectId = ObjectId.Parse(adminIdFromSession);
+            var adminLog = new AdminLog
+            {
+                reason = "Updated Transfer Limit",
+                adminId = adminObjectId,
+                date = DateTimeOffset.Now,
+                type = 6,
+                userAgent = HttpContext.Request.Headers["User-Agent"].ToString(),
+                ip = HttpContext.Connection.RemoteIpAddress.ToString()
+            };
+            await _adminLogCollection.InsertOneAsync(adminLog);
+
+            return Ok(new _limitRes { type = "success", message = _localizer["52"] });
+        }
+
+        #endregion
     }
 }

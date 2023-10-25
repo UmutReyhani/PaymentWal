@@ -8,16 +8,20 @@ using MongoDB.Bson;
 using System.Net.Sockets;
 using PaymentWall.Models;
 using MongoDB.Driver.Linq;
+using Microsoft.Extensions.Localization;
+using PaymentWall.Controllers;
 
 [Route("api/[controller]")]
 [ApiController]
 public class TicketController : ControllerBase
 {
     private readonly IConnectionService _connectionService;
+    private readonly IStringLocalizer _localizer;
 
-    public TicketController(IConnectionService connectionService)
+    public TicketController(IConnectionService connectionService, IStringLocalizer<UserController> localizer)
     {
         _connectionService = connectionService;
+        _localizer = localizer;
     }
 
     #region Create Ticket
@@ -43,7 +47,7 @@ public class TicketController : ControllerBase
     {
         var userIdFromSession = HttpContext.Session.GetString("id");
         if (string.IsNullOrEmpty(userIdFromSession))
-            return Unauthorized(new _createTicketRes { type = "error", message = "User not logged in." });
+            return Unauthorized(new _createTicketRes { type = "error", message = _localizer["userNotLoggedIn"] });
 
         Ticket ticket = new Ticket
         {
@@ -57,7 +61,7 @@ public class TicketController : ControllerBase
         var _ticketCollection = _connectionService.db().GetCollection<Ticket>("Tickets");
         _ticketCollection.InsertOne(ticket);
 
-        return Ok(new _createTicketRes { type = "success", message = "Ticket created successfully." });
+        return Ok(new _createTicketRes { type = "success", message = _localizer["ticketCreatedSuccessfully"] });
     }
 
     #endregion
@@ -154,7 +158,7 @@ public class TicketController : ControllerBase
 
         var ticket = _ticketCollection.Find(t => t._id == ObjectId.Parse(data.ticketId)).FirstOrDefault();
         if (ticket == null)
-            return NotFound(new { type = "error", message = "Ticket not found." });
+            return NotFound(new { type = "error", message = _localizer["ticketNotFound"] });
 
         ticket.adminResponse = data.response;
         ticket.status = 1;
@@ -165,7 +169,7 @@ public class TicketController : ControllerBase
 
         _ticketCollection.UpdateOne(t => t._id == ObjectId.Parse(data.ticketId), update);
 
-        return Ok(new _adminResponseToTicketRes { type = "success", message = "Response added successfully." });
+        return Ok(new _adminResponseToTicketRes { type = "success", message = _localizer["responseAddedSuccessfully"] });
     }
 
     #endregion
@@ -197,7 +201,7 @@ public class TicketController : ControllerBase
     {
         var userIdFromSession = HttpContext.Session.GetString("id");
         if (string.IsNullOrEmpty(userIdFromSession))
-            return Unauthorized(new { type = "error", message = "User not logged in." });
+            return Unauthorized(new { type = "error", message = _localizer["userNotLoggedIn"] });
 
         var _ticketCollection = _connectionService.db().GetCollection<Ticket>("Tickets");
 
@@ -234,13 +238,13 @@ public class TicketController : ControllerBase
     {
         var userIdFromSession = HttpContext.Session.GetString("id");
         if (string.IsNullOrEmpty(userIdFromSession))
-            return Unauthorized(new { type = "error", message = "User not logged in." });
+            return Unauthorized(new { type = "error", message = _localizer["userNotLoggedIn"] });
 
         var _ticketCollection = _connectionService.db().GetCollection<Ticket>("Tickets");
         var ticket = _ticketCollection.Find(t => t._id == ObjectId.Parse(ticketId) && t.userId == ObjectId.Parse(userIdFromSession)).FirstOrDefault();
 
         if (ticket == null)
-            return NotFound(new _getUserTicketDetailRes { type = "error", message = "Ticket not found or you are not authorized to view it." });
+            return NotFound(new _getUserTicketDetailRes { type = "error", message = _localizer["ticketNotFoundOrNotAuthorized"] });
 
         return Ok(new _getUserTicketDetailRes { type = "success", ticket = ticket });
     }
@@ -274,7 +278,7 @@ public class TicketController : ControllerBase
         var existingTicket = _ticketCollection.AsQueryable().FirstOrDefault(t => t._id.ToString() == req.ticketId);
         if (existingTicket == null)
         {
-            return Ok(new _updateTicketStatusRes { type = "error", message = "Ticket not found." });
+            return Ok(new _updateTicketStatusRes { type = "error", message = _localizer["ticketNotFound"] });
         }
 
         var adminIdFromSession = HttpContext.Session.GetString("id");
@@ -299,7 +303,7 @@ public class TicketController : ControllerBase
 
         await _ticketCollection.UpdateOneAsync(t => t._id == existingTicket._id, statusUpdate);
 
-        return Ok(new _updateTicketStatusRes { type = "success", message = "Ticket status updated successfully." });
+        return Ok(new _updateTicketStatusRes { type = "success", message = _localizer["ticketStatusUpdated"] });
     }
 
     #endregion

@@ -6,6 +6,7 @@ using PaymentWall.Services;
 using System.ComponentModel.DataAnnotations;
 using MongoDB.Bson.Serialization.Attributes;
 using PaymentWall.Attributes;
+using Microsoft.Extensions.Localization;
 
 namespace PaymentWall.Controllers
 {
@@ -14,9 +15,12 @@ namespace PaymentWall.Controllers
     public class AccountingController : ControllerBase
     {
         private readonly IConnectionService _connectionService;
-        public AccountingController(IConnectionService connectionService)
+        private readonly IStringLocalizer _localizer;
+
+        public AccountingController(IConnectionService connectionService, IStringLocalizer<UserController> localizer)
         {
             _connectionService = connectionService;
+            _localizer = localizer;
         }
         #region Transfer Money
         public class _transferRequest
@@ -43,14 +47,14 @@ namespace PaymentWall.Controllers
             var userIdFromSession = HttpContext.Session.GetString("id");
             if (string.IsNullOrEmpty(userIdFromSession))
             {
-                return Ok(new _transferResponse { type = "error", message = "User not authenticated." });
+                return Ok(new _transferResponse { type = "error", message = _localizer["1"].Value });
             }
 
             var recipientId = transferData.recipientWalletId;
             var recipient = _walletCollection.AsQueryable().FirstOrDefault(u => u._id == recipientId);
             if (recipient == null)
             {
-                return Ok(new _transferResponse { type = "error", message = "Recipient wallet not found." });
+                return Ok(new _transferResponse { type = "error", message = _localizer["2"].Value });
             }
 
             ObjectId userId = ObjectId.Parse(userIdFromSession);
@@ -58,12 +62,12 @@ namespace PaymentWall.Controllers
             var sender = _walletCollection.AsQueryable().FirstOrDefault(w => w.userId == userId && w.currency == recipient.currency);
             if (sender == null)
             {
-                return Ok(new _transferResponse { type = "error", message = "Sender wallet not found." });
+                return Ok(new _transferResponse { type = "error", message = _localizer["3"].Value });
             }
 
             if (sender.balance < transferData.amount)
             {
-                return Ok(new _transferResponse { type = "error", message = "Insufficient balance." });
+                return Ok(new _transferResponse { type = "error", message = _localizer["4"].Value });
             }
 
             var senderUpdate = Builders<Wallet>.Update.Inc(w => w.balance, -transferData.amount);
@@ -92,7 +96,7 @@ namespace PaymentWall.Controllers
             };
             _accountingCollection.InsertOne(recipientAccounting);
 
-            return Ok(new _transferResponse { type = "success", message = "Transfer completed successfully." });
+            return Ok(new _transferResponse { type = "success", message = _localizer["5"].Value });
         }
         #endregion
 
@@ -124,7 +128,7 @@ namespace PaymentWall.Controllers
             var userIdFromSession = HttpContext.Session.GetString("id");
             if (string.IsNullOrEmpty(userIdFromSession))
             {
-                return Ok(new _financialReportResponse { type = "error", message = "User not logged in." });
+                return Ok(new _financialReportResponse { type = "error", message = _localizer["6"].Value });
             }
 
             ObjectId userIdObj;
@@ -134,25 +138,25 @@ namespace PaymentWall.Controllers
             }
             catch
             {
-                return Ok(new _financialReportResponse { type = "error", message = "Invalid userId format in session." });
+                return Ok(new _financialReportResponse { type = "error", message = _localizer["7"].Value });
             }
 
             if (string.IsNullOrEmpty(request.walletId))
             {
-                return Ok(new _financialReportResponse { type = "error", message = "WalletId is required." });
+                return Ok(new _financialReportResponse { type = "error", message = _localizer["8"].Value });
             }
 
             int walletIdInt;
             if (!int.TryParse(request.walletId, out walletIdInt))
             {
-                return Ok(new _financialReportResponse { type = "error", message = "Invalid walletId format." });
+                return Ok(new _financialReportResponse { type = "error", message = _localizer["9"].Value });
             }
 
             var wallet = _walletCollection.AsQueryable().FirstOrDefault(w => w._id == walletIdInt);
 
             if (wallet == null || wallet.userId != userIdObj)
             {
-                return Ok(new _financialReportResponse { type = "error", message = "Wallet not found or does not belong to user." });
+                return Ok(new _financialReportResponse { type = "error", message = _localizer["10"].Value });
             }
 
             decimal totalIncome = 0;
@@ -195,13 +199,12 @@ namespace PaymentWall.Controllers
             return Ok(new _financialReportResponse
             {
                 type = "success",
-                message = "Financial report fetched successfully.",
+                message = _localizer["11"].Value,
                 totalIncome = totalIncome,
                 totalExpense = Math.Abs(totalExpense),
                 netBalance = netBalance
             });
         }
-
         #endregion
 
     }

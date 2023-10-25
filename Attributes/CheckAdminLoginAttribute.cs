@@ -18,7 +18,8 @@ namespace PaymentWall.Attributes
         public void OnAuthorization(AuthorizationFilterContext context)
         {
             var userIdFromSession = context.HttpContext.Session.GetString("id");
-            if (string.IsNullOrEmpty(userIdFromSession))
+            var login = context.HttpContext.Session.GetString("login");
+            if (string.IsNullOrEmpty(userIdFromSession) | login != "admin")
             {
                 context.Result = new OkObjectResult(new { type = "error", message = "unauthorized" });
                 return;

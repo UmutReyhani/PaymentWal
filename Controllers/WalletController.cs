@@ -7,6 +7,7 @@ using System.Linq;
 using System.ComponentModel.DataAnnotations;
 using MongoDB.Bson;
 using PaymentWall.Attributes;
+using Microsoft.Extensions.Localization;
 
 namespace PaymentWall.Controllers
 {
@@ -15,10 +16,13 @@ namespace PaymentWall.Controllers
     public class WalletController : ControllerBase
     {
         private readonly IConnectionService _connectionService;
+        private readonly IStringLocalizer _localizer;
 
-        public WalletController(IConnectionService connectionService)
+
+        public WalletController(IConnectionService connectionService, IStringLocalizer<UserController> localizer)
         {
             _connectionService = connectionService;
+            _localizer = localizer;
         }
         #region Generateuniqwalletid
         private int GenerateUniqueWalletId()
@@ -60,7 +64,7 @@ namespace PaymentWall.Controllers
             var userIdFromSession = HttpContext.Session.GetString("id");
             if (string.IsNullOrEmpty(userIdFromSession))
             {
-                return Ok(new _listWalletRes { type = "error", message = "User not logged in." });
+                return Ok(new _listWalletRes { type = "error", message = _localizer["userNotLoggedIn"] });
             }
 
             ObjectId userIdObj;
@@ -70,17 +74,17 @@ namespace PaymentWall.Controllers
             }
             catch
             {
-                return Ok(new _listWalletRes { type = "error", message = "Invalid userId format in session." });
+                return Ok(new _listWalletRes { type = "error", message = _localizer["invalidUserIdFormat"] });
             }
 
             var userWallets = _walletCollection.AsQueryable().Where(wallet => wallet.userId == userIdObj).ToList();
 
             if (userWallets == null || userWallets.Count == 0)
             {
-                return Ok(new _listWalletRes { type = "error", message = "No wallets found for this userId." });
+                return Ok(new _listWalletRes { type = "error", message = _localizer["noWalletsForUserId"] });
             }
 
-            return Ok(new _listWalletRes { type = "success", message = "Wallets fetched successfully.", wallets = userWallets });
+            return Ok(new _listWalletRes { type = "success", message = _localizer["walletsFetchedSuccessfully"], wallets = userWallets });
         }
 
         #endregion
@@ -110,19 +114,19 @@ namespace PaymentWall.Controllers
 
             if (string.IsNullOrEmpty(userIdFromSession))
             {
-                return Ok(new _createWalletRes { type = "error", message = "Unauthorized request. User not found in session." });
+                return Ok(new _createWalletRes { type = "error", message = _localizer["unauthorizedRequest"] });
             }
 
             var user = _userCollection.AsQueryable().FirstOrDefault(u => u._id.ToString() == userIdFromSession);
             if (user == null)
             {
-                return Ok(new _createWalletRes { type = "error", message = "User not found." });
+                return Ok(new _createWalletRes { type = "error", message = _localizer["43"].Value });
             }
 
             var existingWallet = _walletCollection.AsQueryable().FirstOrDefault(w => w.userId.ToString() == userIdFromSession && w.currency == req.currency);
             if (existingWallet != null)
             {
-                return Ok(new _createWalletRes { type = "error", message = "Wallet with this currency already exists for the user." });
+                return Ok(new _createWalletRes { type = "error", message = _localizer["walletAlreadyExists"] });
             }
 
             Wallet newWallet = new Wallet
@@ -135,7 +139,7 @@ namespace PaymentWall.Controllers
 
             _walletCollection.InsertOne(newWallet);
 
-            return Ok(new _createWalletRes { type = "success", message = "Wallet created successfully." });
+            return Ok(new _createWalletRes { type = "success", message = _localizer["walletCreatedSuccessfully"] });
         }
 
         #endregion
