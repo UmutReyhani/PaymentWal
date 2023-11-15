@@ -1,15 +1,15 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using PaymentWall.Attributes;
 using MongoDB.Driver;
-using System.Collections.Generic;
 using PaymentWall.Services;
 using System.ComponentModel.DataAnnotations;
 using MongoDB.Bson;
-using System.Net.Sockets;
 using PaymentWall.Models;
 using MongoDB.Driver.Linq;
 using Microsoft.Extensions.Localization;
 using PaymentWall.Controllers;
+using System.Net.Mail;
+using System.Net;
 
 [Route("api/[controller]")]
 [ApiController]
@@ -47,7 +47,7 @@ public class TicketController : ControllerBase
     {
         var userIdFromSession = HttpContext.Session.GetString("id");
         if (string.IsNullOrEmpty(userIdFromSession))
-            return Unauthorized(new _createTicketRes { type = "error", message = _localizer["userNotLoggedIn"] });
+            return Unauthorized(new _createTicketRes { type = "error", message = _localizer["userNotLoggedIn"].Value });
 
         Ticket ticket = new Ticket
         {
@@ -61,7 +61,7 @@ public class TicketController : ControllerBase
         var _ticketCollection = _connectionService.db().GetCollection<Ticket>("Tickets");
         _ticketCollection.InsertOne(ticket);
 
-        return Ok(new _createTicketRes { type = "success", message = _localizer["ticketCreatedSuccessfully"] });
+        return Ok(new _createTicketRes { type = "success", message = _localizer["ticketCreatedSuccessfully"].Value });
     }
 
     #endregion
@@ -151,14 +151,14 @@ public class TicketController : ControllerBase
         public string message { get; set; }
     }
 
-    [HttpPost("[action]"), CheckAdminLogin]
+    [HttpPost("[action]"), CheckAdminLogin(0, 1)]
     public ActionResult<_adminResponseToTicketRes> AdminResponseToTicket([FromBody] _adminResponseToTicketReq data)
     {
         var _ticketCollection = _connectionService.db().GetCollection<Ticket>("Tickets");
 
         var ticket = _ticketCollection.Find(t => t._id == ObjectId.Parse(data.ticketId)).FirstOrDefault();
         if (ticket == null)
-            return NotFound(new { type = "error", message = _localizer["ticketNotFound"] });
+            return NotFound(new { type = "error", message = _localizer["ticketNotFound"].Value });
 
         ticket.adminResponse = data.response;
         ticket.status = 1;
@@ -169,7 +169,7 @@ public class TicketController : ControllerBase
 
         _ticketCollection.UpdateOne(t => t._id == ObjectId.Parse(data.ticketId), update);
 
-        return Ok(new _adminResponseToTicketRes { type = "success", message = _localizer["responseAddedSuccessfully"] });
+        return Ok(new _adminResponseToTicketRes { type = "success", message = _localizer["responseAddedSuccessfully"].Value });
     }
 
     #endregion
@@ -186,6 +186,7 @@ public class TicketController : ControllerBase
 
     public class ticketViewModel
     {
+        public ObjectId ticketId { get; set; }
         public string title { get; set; }
         public string description { get; set; }
         public DateTimeOffset dateCreated { get; set; }
@@ -201,7 +202,7 @@ public class TicketController : ControllerBase
     {
         var userIdFromSession = HttpContext.Session.GetString("id");
         if (string.IsNullOrEmpty(userIdFromSession))
-            return Unauthorized(new { type = "error", message = _localizer["userNotLoggedIn"] });
+            return Unauthorized(new { type = "error", message = _localizer["userNotLoggedIn"].Value });
 
         var _ticketCollection = _connectionService.db().GetCollection<Ticket>("Tickets");
 
@@ -209,6 +210,7 @@ public class TicketController : ControllerBase
 
         var ticketViewModels = userTickets.Select(t => new ticketViewModel
         {
+            ticketId = t._id,
             title = t.title,
             description = t.description,
             dateCreated = t.dateCreated,
@@ -219,8 +221,6 @@ public class TicketController : ControllerBase
 
         return Ok(new { type = "success", tickets = ticketViewModels });
     }
-
-
     #endregion
 
     #region Get User Ticket Detail
@@ -238,13 +238,13 @@ public class TicketController : ControllerBase
     {
         var userIdFromSession = HttpContext.Session.GetString("id");
         if (string.IsNullOrEmpty(userIdFromSession))
-            return Unauthorized(new { type = "error", message = _localizer["userNotLoggedIn"] });
+            return Unauthorized(new { type = "error", message = _localizer["userNotLoggedIn"].Value });
 
         var _ticketCollection = _connectionService.db().GetCollection<Ticket>("Tickets");
         var ticket = _ticketCollection.Find(t => t._id == ObjectId.Parse(ticketId) && t.userId == ObjectId.Parse(userIdFromSession)).FirstOrDefault();
 
         if (ticket == null)
-            return NotFound(new _getUserTicketDetailRes { type = "error", message = _localizer["ticketNotFoundOrNotAuthorized"] });
+            return NotFound(new _getUserTicketDetailRes { type = "error", message = _localizer["ticketNotFoundOrNotAuthorized"].Value });
 
         return Ok(new _getUserTicketDetailRes { type = "success", ticket = ticket });
     }
@@ -269,7 +269,7 @@ public class TicketController : ControllerBase
         public string message { get; set; }
     }
 
-    [HttpPost("[action]")]
+    [HttpPost("[action]"), CheckAdminLogin(0, 1)]
     public async Task<ActionResult<_updateTicketStatusRes>> UpdateTicketStatus([FromBody] _updateTicketStatusReq req)
     {
         var _ticketCollection = _connectionService.db().GetCollection<Ticket>("Tickets");
@@ -278,7 +278,7 @@ public class TicketController : ControllerBase
         var existingTicket = _ticketCollection.AsQueryable().FirstOrDefault(t => t._id.ToString() == req.ticketId);
         if (existingTicket == null)
         {
-            return Ok(new _updateTicketStatusRes { type = "error", message = _localizer["ticketNotFound"] });
+            return Ok(new _updateTicketStatusRes { type = "error", message = _localizer["ticketNotFound"].Value });
         }
 
         var adminIdFromSession = HttpContext.Session.GetString("id");
@@ -303,8 +303,114 @@ public class TicketController : ControllerBase
 
         await _ticketCollection.UpdateOneAsync(t => t._id == existingTicket._id, statusUpdate);
 
-        return Ok(new _updateTicketStatusRes { type = "success", message = _localizer["ticketStatusUpdated"] });
+        return Ok(new _updateTicketStatusRes { type = "success", message = _localizer["ticketStatusUpdated"].Value });
     }
 
     #endregion
+
+    #region List Resolved Tickets
+    [HttpGet("[action]")]
+    [CheckAdminLogin(0,1)]
+    public ActionResult<List<Ticket>> ListResolvedTickets()
+    {
+        var _ticketCollection = _connectionService.db().GetCollection<Ticket>("Tickets");
+        var resolvedTickets = _ticketCollection.Find(t => t.status == 3).ToList();
+        return Ok(resolvedTickets);
+    }
+    #endregion
+
+    #region List Pending Tickets
+
+    public class PendingTicketsResponse
+    {
+        public List<TicketViewModel> tickets { get; set; }
+        public int totalCount { get; set; }
+    }
+
+    public class TicketViewModel
+    {
+        public ObjectId userId { get; set; }
+        public string title { get; set; }
+        public string description { get; set; }
+        public DateTimeOffset dateCreated { get; set; }
+    }
+
+    [HttpGet("[action]")]
+    [CheckAdminLogin(0,1)]
+    public ActionResult<PendingTicketsResponse> ListPendingTicketsWithCount()
+    {
+        var _ticketCollection = _connectionService.db().GetCollection<Ticket>("Tickets");
+        var pendingTickets = _ticketCollection.Find(t => t.status == 1).ToList();
+
+        var ticketViewModels = pendingTickets.Select(t => new TicketViewModel
+        {
+            userId = t.userId,
+            title = t.title,
+            description = t.description,
+            dateCreated = t.dateCreated
+        }).ToList();
+
+        var response = new PendingTicketsResponse
+        {
+            tickets = ticketViewModels,
+            totalCount = ticketViewModels.Count
+        };
+
+        return Ok(response);
+    }
+    #endregion
+
+    //#region Contact Form
+
+    //public class _contactFormRequest
+    //{
+    //    [Required]
+    //    public string firstName { get; set; }
+
+    //    [Required]
+    //    public string lastName { get; set; }
+
+    //    [Required, EmailAddress]
+    //    public string email { get; set; }
+
+    //    [Required]
+    //    public string message { get; set; }
+    //}
+
+    //public class _contactFormResponse
+    //{
+    //    [Required]
+    //    public string type { get; set; }
+    //    public string message { get; set; }
+    //}
+
+    //[HttpPost("[action]")]
+    //public ActionResult<_contactFormResponse> SendContactForm([FromBody] _contactFormRequest req)
+    //{
+    //    try
+    //    {
+    //        // E-posta gönderimini burada yapın
+    //        MailMessage mail = new MailMessage();
+    //        mail.From = new MailAddress("yourEmail@example.com");
+    //        mail.To.Add("yourDestinationEmail@example.com");
+    //        mail.Subject = $"New Contact Form Message from {req.firstName} {req.lastName}";
+    //        mail.Body = $"{req.message}\n\nFrom: {req.email}";
+
+    //        SmtpClient smtpClient = new SmtpClient("your.smtp.server");
+    //        smtpClient.Port = 587;
+    //        smtpClient.Credentials = new NetworkCredential("yourEmail@example.com", "yourPassword");
+    //        smtpClient.EnableSsl = true;
+
+    //        smtpClient.Send(mail);
+
+    //        return Ok(new _contactFormResponse { type = "success", message = "Message sent successfully!" });
+    //    }
+    //    catch (Exception ex)
+    //    {
+    //        return BadRequest(new _contactFormResponse { type = "error", message = ex.Message });
+    //    }
+    //}
+
+    //#endregion
+
 }

@@ -44,7 +44,7 @@ namespace PaymentWall.Controllers
             var userIdFromSession = HttpContext.Session.GetString("id");
             if (string.IsNullOrEmpty(userIdFromSession))
             {
-                return Ok(new { message = _localizer["53"] });
+                return Ok(new { message = _localizer["53"].Value });
             }
 
             ObjectId userIdObj;
@@ -54,7 +54,7 @@ namespace PaymentWall.Controllers
             }
             catch
             {
-                return Ok(new { message = _localizer["54"] });
+                return Ok(new { message = _localizer["54"].Value });
             }
 
             var userWallets = _walletCollection.AsQueryable().Where(w => w.userId == userIdObj).ToList();
@@ -96,7 +96,7 @@ namespace PaymentWall.Controllers
 
             if (string.IsNullOrEmpty(userIdFromSession))
             {
-                return Ok(new { message = _localizer["55"] });
+                return Ok(new { message = _localizer["55"].Value });
             }
 
             var userObjectId = ObjectId.Parse(userIdFromSession);
@@ -105,7 +105,7 @@ namespace PaymentWall.Controllers
 
             if (!userWallets.Any(w => w._id == walletId))
             {
-                return Ok(new { message = _localizer["56"] });
+                return Ok(new { message = _localizer["56"].Value });
             }
 
             var userLimits = _limitCollection.AsQueryable().FirstOrDefault();

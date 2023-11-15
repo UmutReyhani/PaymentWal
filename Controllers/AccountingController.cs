@@ -70,6 +70,45 @@ namespace PaymentWall.Controllers
                 return Ok(new _transferResponse { type = "error", message = _localizer["4"].Value });
             }
 
+            //limitler
+            var _limitCollection = _connectionService.db().GetCollection<Limit>("Limit");
+            var currentLimit = _limitCollection.AsQueryable().FirstOrDefault();
+
+            if (currentLimit != null)
+            {
+                if (transferData.amount > currentLimit.maxTransfer)
+                {
+                    return Ok(new _transferResponse { type = "error", message = _localizer["limitExceededMaxTransfer"].Value });
+                }
+
+                if (transferData.amount < currentLimit.minTransfer)
+                {
+                    return Ok(new _transferResponse { type = "error", message = _localizer["limitErrorMinTransfer"].Value });
+                }
+
+                // Günlük transfer kontrolü
+                var dailyTransfers = _accountingCollection.AsQueryable().Where(a => a.userId == userId && a.date > DateTime.UtcNow.AddDays(-1)).Sum(a => a.amount);
+                if ((dailyTransfers + transferData.amount) > currentLimit.dailyMaxTransfer)
+                {
+                    return Ok(new _transferResponse { type = "error", message = _localizer["limitExceededDailyMaxTransfer"].Value });
+                }
+
+                // Aylık transfer kontrolü
+                var monthlyTransfers = _accountingCollection.AsQueryable().Where(a => a.userId == userId && a.date > DateTime.UtcNow.AddMonths(-1)).Sum(a => a.amount);
+                if ((monthlyTransfers + transferData.amount) > currentLimit.monthlyMaxTransfer)
+                {
+                    return Ok(new _transferResponse { type = "error", message = _localizer["limitExceededMonthlyMaxTransfer"].Value });
+                }
+
+                // Günlük transfer sayısı kontrolü
+                var dailyTransferCount = _accountingCollection.AsQueryable().Count(a => a.userId == userId && a.date > DateTime.UtcNow.AddDays(-1));
+                if (dailyTransferCount >= currentLimit.dailyMaxTransferCount)
+                {
+                    return Ok(new _transferResponse { type = "error", message = _localizer["limitExceededDailyMaxTransferCount"].Value });
+                }
+            }
+            var recipientUserId = recipient.userId;
+
             var senderUpdate = Builders<Wallet>.Update.Inc(w => w.balance, -transferData.amount);
             _walletCollection.UpdateOne(u => u._id == sender._id, senderUpdate);
 
@@ -82,7 +121,8 @@ namespace PaymentWall.Controllers
                 amount = -transferData.amount,
                 currency = sender.currency,
                 walletId = sender._id,
-                recipientUserId = recipient.userId
+                recipientUserId = recipient.userId,
+                date = DateTimeOffset.Now
             };
             _accountingCollection.InsertOne(senderAccounting);
 
@@ -92,7 +132,9 @@ namespace PaymentWall.Controllers
                 amount = transferData.amount,
                 currency = recipient.currency,
                 walletId = transferData.recipientWalletId,
-                senderUserId = sender.userId
+                senderUserId = sender.userId,
+                date = DateTimeOffset.Now,
+
             };
             _accountingCollection.InsertOne(recipientAccounting);
 
@@ -108,6 +150,7 @@ namespace PaymentWall.Controllers
             public DateTime? startDate { get; set; }
             public DateTime? endDate { get; set; }
             public string walletId { get; set; }
+            public string currency { get; set; }
         }
 
         public class _financialReportResponse
@@ -163,31 +206,30 @@ namespace PaymentWall.Controllers
             decimal totalExpense = 0;
             decimal netBalance = 0;
 
-            var skip = (request.pageNumber.Value - 1) * request.pageSize.Value;
+            // Sayfalama için doğru değerleri ayarla
+            int pageSize = request.pageSize.HasValue && request.pageSize.Value > 0 ? request.pageSize.Value : 10;
+            int pageNumber = request.pageNumber.HasValue && request.pageNumber.Value > 0 ? request.pageNumber.Value : 1;
+            var skip = (pageNumber - 1) * pageSize;
 
             var query = _accountingCollection.AsQueryable().Where(a => a.walletId == wallet._id);
 
-            if (!request.startDate.HasValue && !request.endDate.HasValue)
+            if (request.startDate.HasValue && request.endDate.HasValue)
             {
-                request.endDate = DateTime.Now;
-                request.startDate = request.endDate.Value.AddDays(-30);
+                query = query.Where(a => a.date >= request.startDate.Value && a.date <= request.endDate.Value);
             }
-            else if (request.startDate.HasValue && !request.endDate.HasValue)
+            else if (!request.startDate.HasValue && !request.endDate.HasValue)
             {
-                request.endDate = request.startDate.Value.AddDays(30);
-            }
-
-            if (request.startDate.HasValue)
-            {
-                query = query.Where(a => a.date >= request.startDate.Value);
+                var endDate = DateTime.UtcNow;
+                var startDate = endDate.AddDays(-30);
+                query = query.Where(a => a.date >= startDate && a.date <= endDate);
             }
 
-            if (request.endDate.HasValue)
+            if (!string.IsNullOrEmpty(request.currency))
             {
-                query = query.Where(a => a.date <= request.endDate.Value);
+                query = query.Where(a => a.currency == request.currency);
             }
 
-            var accountingForWallet = query.Skip(skip).Take(request.pageSize.Value).ToList();
+            var accountingForWallet = query.Skip(skip).Take(pageSize).ToList();
 
             foreach (var entry in accountingForWallet)
             {

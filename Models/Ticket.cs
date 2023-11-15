@@ -11,5 +11,5 @@ public class Ticket
     public DateTimeOffset dateCreated { get; set; }
     public DateTime? dateResolved { get; set; }
     public string adminResponse { get; set; }
-    public int status { get; set; } = 0; // "Open", "Pending", Resolved", "Closed"
+    public int status { get; set; } = 0; // "Pending","Open", "Resolved"
 }

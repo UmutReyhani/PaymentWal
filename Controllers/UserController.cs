@@ -152,10 +152,10 @@ namespace PaymentWall.Controllers
         {
             if (xssCheck(data))
             {
-                return Ok(new _createUserRes { type = "error", message = _localizer["12"] });
+                return Ok(new _createUserRes { type = "error", message = _localizer["12"].Value });
             }
             var _userCollection = _connectionService.db().GetCollection<Users>("Users");
-            var _addressCollection = _connectionService.db().GetCollection<Address>("Addresses");
+            var _addressCollection = _connectionService.db().GetCollection<Address>("Address");
             var _walletCollection = _connectionService.db().GetCollection<Wallet>("Wallet");
 
             DateTime today = DateTime.Today;
@@ -163,19 +163,19 @@ namespace PaymentWall.Controllers
 
             if (age < 18)
             {
-                return Ok(new _createUserRes { type = "error", message = _localizer["mustBeAtLeast18"] });
+                return Ok(new _createUserRes { type = "error", message = _localizer["mustBeAtLeast18"].Value });
             }
 
             var existingUserByEmail = _userCollection.AsQueryable().FirstOrDefault(u => u.email == data.email);
 
             if (existingUserByEmail != null)
             {
-                return Ok(new _createUserRes { type = "error", message = _localizer["userAlreadyExists"] });
+                return Ok(new _createUserRes { type = "error", message = _localizer["userAlreadyExists"].Value });
             }
 
             if (data.type != 0 && data.type != 1)
             {
-                return Ok(new _createUserRes { type = "error", message = _localizer["typeCanOnlyBe"] });
+                return Ok(new _createUserRes { type = "error", message = _localizer["typeCanOnlyBe"].Value });
             }
 
             Users newUser = new Users
@@ -230,7 +230,7 @@ namespace PaymentWall.Controllers
             _logCollection.InsertOne(userLog);
 
 
-            return Ok(new _createUserRes { type = "success", message = _localizer["userCreatedSuccessfully"] });
+            return Ok(new _createUserRes { type = "success", message = _localizer["userCreatedSuccessfully"].Value });
 
         }
         #endregion
@@ -260,18 +260,18 @@ namespace PaymentWall.Controllers
             if (IsIpBlockedFromLogin(userIpAddress))
             {
 
-                return Ok(new _loginRes { type = "error", message = _localizer["loginDisabled"] });
+                return Ok(new _loginRes { type = "error", message = _localizer["loginDisabled"].Value });
             }
 
             var correctCaptchaAnswer = HttpContext.Session.GetString("CaptchaAnswer");
             if (loginData.captchaResponse != correctCaptchaAnswer)
             {
-                return Ok(new _loginRes { type = "error", message = _localizer["invalidCaptcha"] });
+                return Ok(new _loginRes { type = "error", message = _localizer["invalidCaptcha"].Value });
             }
 
             if (loginData == null || string.IsNullOrEmpty(loginData.email) || string.IsNullOrEmpty(loginData.password))
             {
-                return Ok(new _loginRes { type = "error", message = _localizer["18"] });
+                return Ok(new _loginRes { type = "error", message = _localizer["18"].Value });
             }
 
             var userInDb = GetUserFromDb(loginData.email);
@@ -284,19 +284,19 @@ namespace PaymentWall.Controllers
 
             if (userInDb.status == 0)
             {
-                return Ok(new _loginRes { type = "error", message = _localizer["accountInactive"] });
+                return Ok(new _loginRes { type = "error", message = _localizer["accountInactive"].Value });
             }
 
             if (userInDb.password != ComputeSha256Hash(loginData.password))
             {
                 HandleFailedLogin(userInDb, userIpAddress, siteSettings);
                 HttpContext.Session.Remove("CaptchaAnswer");
-                return Ok(new _loginRes { type = "error", message = _localizer["wrongPassword"] });
+                return Ok(new _loginRes { type = "error", message = _localizer["wrongPassword"].Value });
             }
 
             HandleSuccessfulLogin(userInDb);
             HttpContext.Session.Remove("CaptchaAnswer");
-            return Ok(new _loginRes { type = "success", message = _localizer["loginSuccessful"] });
+            return Ok(new _loginRes { type = "success", message = _localizer["loginSuccessful"].Value });
         }
 
         private string GetUserIpAddress()
@@ -410,11 +410,11 @@ namespace PaymentWall.Controllers
             var userIdFromSession = HttpContext.Session.GetString("id");
             if (string.IsNullOrEmpty(userIdFromSession))
             {
-                return Ok(new _updateUserRes { type = "error", message = _localizer["userNotLoggedIn"] });
+                return Ok(new _updateUserRes { type = "error", message = _localizer["userNotLoggedIn"].Value });
             }
 
             var _userCollection = _connectionService.db().GetCollection<Users>("Users");
-            var _addressCollection = _connectionService.db().GetCollection<Address>("Addresses");
+            var _addressCollection = _connectionService.db().GetCollection<Address>("Address");
 
             var existingUser = _userCollection.AsQueryable().FirstOrDefault(u => u._id.ToString() == userIdFromSession);
             if (existingUser == null)
@@ -426,7 +426,7 @@ namespace PaymentWall.Controllers
             {
                 if (ComputeSha256Hash(req.oldPassword) != existingUser.password)
                 {
-                    return Ok(new _updateUserRes { type = "error", message = _localizer["incorrectOldPassword"] });
+                    return Ok(new _updateUserRes { type = "error", message = _localizer["incorrectOldPassword"].Value });
                 }
                 var passwordUpdate = Builders<Users>.Update.Set(u => u.password, ComputeSha256Hash(req.newPassword));
                 await _userCollection.UpdateOneAsync(u => u._id == existingUser._id, passwordUpdate);
@@ -456,7 +456,7 @@ namespace PaymentWall.Controllers
                 await _addressCollection.InsertOneAsync(newAddress);
             }
 
-            return Ok(new _updateUserRes { type = "success", message = _localizer["userUpdatedSuccessfully"] });
+            return Ok(new _updateUserRes { type = "success", message = _localizer["userUpdatedSuccessfully"].Value });
         }
 
 
@@ -478,7 +478,7 @@ namespace PaymentWall.Controllers
             LogUserAction(userId, 2);
 
             userFunctions.ClearCurrentUserFromSession(HttpContext);
-            return Ok(new _logoutRes { type = "success", message = _localizer["loggedOutSuccessfully"] });
+            return Ok(new _logoutRes { type = "success", message = _localizer["loggedOutSuccessfully"].Value });
         }
 
         private void LogUserAction(string userId, int actionType)

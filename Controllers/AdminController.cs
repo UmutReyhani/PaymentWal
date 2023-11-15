@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Amazon.Runtime.Internal;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Localization;
 using MongoDB.Bson;
@@ -117,8 +118,9 @@ namespace PaymentWall.Controllers
                 return Ok(new _createAdminRes { type = "error", message = _localizer["12"].Value });
             }
             var _adminCollection = _connectionService.db().GetCollection<Admin>("Admin");
+            var adminIdFromSession = HttpContext.Session.GetString("id");
 
-            var existingAdminByEmail = _adminCollection.AsQueryable().FirstOrDefault(a => a.email == data.email);
+            var existingAdminByEmail = _adminCollection.AsQueryable().FirstOrDefault(a => a.email == data.email); //uniq index
 
             if (existingAdminByEmail != null)
             {
@@ -259,7 +261,7 @@ namespace PaymentWall.Controllers
         {
             wrongPassword(ip, true);
 
-            admin.failedLoginAttempts += 1;                                  
+            admin.failedLoginAttempts += 1;
 
             var _adminCollection = _connectionService.db().GetCollection<Admin>("Admin");
             var update = Builders<Admin>.Update
@@ -308,6 +310,7 @@ namespace PaymentWall.Controllers
         }
 
         [HttpPost("[action]")]
+        [CheckAdminLogin(0, 1)]
         public ActionResult<_logoutRes> AdminLogout()
         {
             var userId = HttpContext.Session.GetString("id");
@@ -412,7 +415,7 @@ namespace PaymentWall.Controllers
             public string message { get; set; }
         }
 
-        [HttpPost("[action]"), CheckAdminLogin]
+        [HttpPost("[action]"), CheckAdminLogin(0, 1)]
         public async Task<ActionResult<_updateAdminPasswordRes>> UpdateAdminPassword([FromBody] _updateAdminPasswordReq req)
         {
             var adminIdFromSession = HttpContext.Session.GetString("adminId");
@@ -513,6 +516,7 @@ namespace PaymentWall.Controllers
         }
 
         [HttpPost("[action]")]
+        [CheckAdminLogin(1)]
         public async Task<ActionResult<_updateAdminStatusRes>> UpdateAdminStatus([FromBody] _updateAdminStatusReq req)
         {
             var _adminCollection = _connectionService.db().GetCollection<Admin>("Admin");
@@ -571,6 +575,7 @@ namespace PaymentWall.Controllers
         }
 
         [HttpPost("[action]")]
+        [CheckAdminLogin(0, 1)]
         public async Task<ActionResult<_updateUserStatusRes>> UpdateUserStatus([FromBody] _updateUserStatusReq req)
         {
             var _userCollection = _connectionService.db().GetCollection<Users>("Users");
@@ -656,6 +661,19 @@ namespace PaymentWall.Controllers
             var _userCollection = _connectionService.db().GetCollection<Users>("Users");
             IQueryable<Users> queryableUsers = _userCollection.AsQueryable();
 
+            DateTime startDate;
+            DateTime endDate;
+            if (!req.startDate.HasValue || !req.endDate.HasValue)
+            {
+                startDate = DateTime.Now.AddDays(-30);
+                endDate = DateTime.Now;
+            }
+            else
+            {
+                startDate = req.startDate.Value;
+                endDate = req.endDate.Value;
+            }
+
             if (req.startDate.HasValue && req.endDate.HasValue)
             {
                 queryableUsers = queryableUsers.Where(u => u.register >= req.startDate.Value && u.register <= req.endDate.Value);
@@ -674,7 +692,7 @@ namespace PaymentWall.Controllers
 
             if (currentPage <= 0 || req.pageSize <= 0)
             {
-                return Ok(new GetAllUsersRes { type = "false", message = _localizer["45"] });
+                return Ok(new GetAllUsersRes { type = "false", message = _localizer["45"].Value });
             }
 
             var users = queryableUsers
@@ -715,6 +733,7 @@ namespace PaymentWall.Controllers
             public DateTime? endDate { get; set; }
             public int? pageNumber { get; set; }
             public int? pageSize { get; set; }
+            public string currency { get; set; }
         }
 
         public class _adminFinancialReportResponse
@@ -726,7 +745,7 @@ namespace PaymentWall.Controllers
             public decimal netBalance { get; set; }
         }
 
-        [HttpPost("[action]"), CheckAdminLogin]
+        [HttpPost("[action]"), CheckAdminLogin(0, 1)]
         public ActionResult<_adminFinancialReportResponse> GetSpecificUserFinancialReport([FromBody] _adminFinancialReportRequest request)
         {
             var _userCollection = _connectionService.db().GetCollection<Users>("Users");
@@ -735,14 +754,14 @@ namespace PaymentWall.Controllers
 
             if (string.IsNullOrEmpty(request.email))
             {
-                return Ok(new _adminFinancialReportResponse { type = "error", message = _localizer["46"] });
+                return Ok(new _adminFinancialReportResponse { type = "error", message = _localizer["46"].Value });
             }
 
             var user = _userCollection.AsQueryable().FirstOrDefault(u => u.email == request.email);
 
             if (user == null)
             {
-                return Ok(new _adminFinancialReportResponse { type = "error", message = _localizer["47"] });
+                return Ok(new _adminFinancialReportResponse { type = "error", message = _localizer["47"].Value });
             }
 
             var userWallets = _walletCollection.AsQueryable().Where(wallet => wallet.userId == user._id).ToList();
@@ -760,20 +779,33 @@ namespace PaymentWall.Controllers
                 request.pageSize = 10;
             }
 
-            var skip = (request.pageNumber.Value - 1) * request.pageSize.Value;
+            int pageSize = request.pageSize.HasValue && request.pageSize.Value > 0 ? request.pageSize.Value : 10;
+            int pageNumber = request.pageNumber.HasValue && request.pageNumber.Value > 0 ? request.pageNumber.Value : 1;
+
+            var skip = (pageNumber - 1) * pageSize;
+
+            DateTime startDate;
+            DateTime endDate;
+            if (!request.startDate.HasValue || !request.endDate.HasValue)
+            {
+                startDate = DateTime.Now.AddDays(-30);
+                endDate = DateTime.Now;
+            }
+            else
+            {
+                startDate = request.startDate.Value;
+                endDate = request.endDate.Value;
+            }
 
             foreach (var wallet in userWallets)
             {
                 var query = _accountingCollection.AsQueryable().Where(a => a.walletId == wallet._id);
 
-                if (request.startDate.HasValue)
-                {
-                    query = query.Where(a => a.date >= request.startDate.Value);
-                }
+                query = query.Where(a => a.date >= startDate && a.date <= endDate);
 
-                if (request.endDate.HasValue)
+                if (!string.IsNullOrEmpty(request.currency))
                 {
-                    query = query.Where(a => a.date <= request.endDate.Value);
+                    query = query.Where(a => a.currency == request.currency);
                 }
 
                 var accountingForWallet = query.Skip(skip).Take(request.pageSize.Value).ToList();
@@ -795,7 +827,6 @@ namespace PaymentWall.Controllers
                 netBalance = netBalance
             });
         }
-
         #endregion
 
         #region Transfer Check
@@ -824,21 +855,26 @@ namespace PaymentWall.Controllers
         }
 
         [HttpGet("[action]")]
-        [CheckAdminLogin(0,1)]
+        [CheckAdminLogin(0, 1)]
         public ActionResult<transferListResponse> GetAllTransfers([FromQuery] transferFilterRequest filter)
         {
             var _accountingCollection = _connectionService.db().GetCollection<Accounting>("Accounting");
             var query = (IMongoQueryable<Accounting>)_accountingCollection.AsQueryable();
 
-            if (filter.startDate.HasValue)
+            DateTime startDate;
+            DateTime endDate;
+            if (!filter.startDate.HasValue || !filter.endDate.HasValue)
             {
-                query = query.Where(a => a.date >= filter.startDate.Value);
+                startDate = DateTime.Now.AddDays(-30);
+                endDate = DateTime.Now;
+            }
+            else
+            {
+                startDate = filter.startDate.Value;
+                endDate = filter.endDate.Value;
             }
 
-            if (filter.endDate.HasValue)
-            {
-                query = query.Where(a => a.date <= filter.endDate.Value);
-            }
+            query = query.Where(a => a.date >= startDate && a.date <= endDate);
 
             if (!string.IsNullOrEmpty(filter.userId))
             {
@@ -865,17 +901,19 @@ namespace PaymentWall.Controllers
         }
         #endregion
 
-        #region Delete Wallet
+        #region UPDATE Wallet active/passive
 
-        public class _deleteWalletReq
+        public class _updateWalletStatusReq
         {
             [Required]
             public string userId { get; set; }
             [Required]
             public int walletId { get; set; }
+            [Required]
+            public int status { get; set; }
         }
 
-        public class _deleteWalletRes
+        public class _updateWalletStatusRes
         {
             [Required]
             public string type { get; set; }
@@ -884,25 +922,52 @@ namespace PaymentWall.Controllers
 
         [HttpPost("[action]")]
         [CheckAdminLogin(0, 1)]
-        public ActionResult<_deleteWalletRes> DeleteWallet([FromBody] _deleteWalletReq req)
+        public async Task<ActionResult<_updateWalletStatusRes>> UpdateWalletStatus([FromBody] _updateWalletStatusReq req)
         {
             var userId = ObjectId.Parse(req.userId);
-            var walletIdToDelete = req.walletId;
+            var walletIdToUpdate = req.walletId;
+            var newStatus = req.status;
 
             var _walletCollection = _connectionService.db().GetCollection<Wallet>("Wallet");
+            var _adminLogCollection = _connectionService.db().GetCollection<AdminLog>("AdminLog");
 
             var userWallets = _walletCollection.AsQueryable().Where(wallet => wallet.userId == userId).ToList();
 
-            var walletToDelete = userWallets.FirstOrDefault(wallet => wallet._id == walletIdToDelete);
+            var walletToUpdate = userWallets.FirstOrDefault(wallet => wallet._id == walletIdToUpdate);
 
-            if (walletToDelete == null)
+            if (walletToUpdate == null)
             {
-                return Ok(new _deleteWalletRes { type = "error", message = _localizer["48"] });
+                return Ok(new _updateWalletStatusRes { type = "error", message = "Wallet not found." });
             }
 
-            _walletCollection.DeleteOne(wallet => wallet._id == walletIdToDelete);
+            if (walletToUpdate.status == newStatus)
+            {
+                return Ok(new _updateWalletStatusRes { type = "error", message = "Wallet status can't be same with updated status" });
+            }
 
-            return Ok(new _deleteWalletRes { type = "success", message = _localizer["49"] });
+            var statusUpdate = Builders<Wallet>.Update
+                .Set(w => w.status, newStatus);
+
+            _walletCollection.UpdateOne(wallet => wallet._id == walletIdToUpdate, statusUpdate);
+
+            var adminIdFromSession = HttpContext.Session.GetString("id");
+            ObjectId adminObjectId = ObjectId.Parse(adminIdFromSession);
+
+            var adminLog = new AdminLog
+            {
+                userId = walletToUpdate.userId,
+                adminId = adminObjectId,
+                previousStatus = walletToUpdate.status,
+                updatedStatus = newStatus,
+                date = DateTimeOffset.Now,
+                type = 4,
+                userAgent = HttpContext.Request.Headers["User-Agent"].ToString(),
+                ip = HttpContext.Connection.RemoteIpAddress.ToString()
+            };
+            await _adminLogCollection.InsertOneAsync(adminLog);
+
+            var message = newStatus == 1 ? "active" : "passive";
+            return Ok(new _updateWalletStatusRes { type = "success", message = $"Wallet status updated to {message}." });
         }
         #endregion
 
@@ -936,7 +1001,7 @@ namespace PaymentWall.Controllers
                 monthlyMaxDeposit = req.monthlyMaxDeposit
             };
             _limitCollection.InsertOne(newLimit);
-            return Ok(new _limitRes { type = "success", message = _localizer["50"] });
+            return Ok(new _limitRes { type = "success", message = _localizer["50"].Value });
         }
 
         #endregion
@@ -963,7 +1028,7 @@ namespace PaymentWall.Controllers
 
             if (existingLimit == null)
             {
-                return Ok(new _limitRes { type = "error", message = _localizer["51"] });
+                return Ok(new _limitRes { type = "error", message = _localizer["51"].Value });
             }
 
             var update = Builders<Limit>.Update;
@@ -990,7 +1055,7 @@ namespace PaymentWall.Controllers
             };
             await _adminLogCollection.InsertOneAsync(adminLog);
 
-            return Ok(new _limitRes { type = "success", message = _localizer["52"] });
+            return Ok(new _limitRes { type = "success", message = _localizer["52"].Value });
         }
 
         #endregion
@@ -1017,7 +1082,7 @@ namespace PaymentWall.Controllers
                 monthlyMaxWithdrawal = req.monthlyMaxWithdrawal
             };
             _limitCollection.InsertOne(newLimit);
-            return Ok(new _limitRes { type = "success", message = _localizer["50"] });
+            return Ok(new _limitRes { type = "success", message = _localizer["50"].Value });
         }
 
         #endregion
@@ -1044,7 +1109,7 @@ namespace PaymentWall.Controllers
 
             if (existingLimit == null)
             {
-                return Ok(new _limitRes { type = "error", message = _localizer["51"] });
+                return Ok(new _limitRes { type = "error", message = _localizer["51"].Value });
             }
 
             var update = Builders<Limit>.Update;
@@ -1071,7 +1136,7 @@ namespace PaymentWall.Controllers
             };
             await _adminLogCollection.InsertOneAsync(adminLog);
 
-            return Ok(new _limitRes { type = "success", message = _localizer["52"] });
+            return Ok(new _limitRes { type = "success", message = _localizer["52"].Value });
         }
 
         #endregion
@@ -1100,7 +1165,7 @@ namespace PaymentWall.Controllers
                 dailyMaxTransferCount = req.dailyMaxTransferCount
             };
             _limitCollection.InsertOne(newLimit);
-            return Ok(new _limitRes { type = "success", message = _localizer["50"] });
+            return Ok(new _limitRes { type = "success", message = _localizer["50"].Value });
         }
 
         #endregion
@@ -1128,7 +1193,7 @@ namespace PaymentWall.Controllers
 
             if (existingLimit == null)
             {
-                return Ok(new _limitRes { type = "error", message = _localizer["51"] });
+                return Ok(new _limitRes { type = "error", message = _localizer["51"].Value });
             }
 
             var update = Builders<Limit>.Update;
@@ -1156,9 +1221,40 @@ namespace PaymentWall.Controllers
             };
             await _adminLogCollection.InsertOneAsync(adminLog);
 
-            return Ok(new _limitRes { type = "success", message = _localizer["52"] });
+            return Ok(new _limitRes { type = "success", message = _localizer["52"].Value });
         }
 
+        #endregion
+
+        #region GET USER COUNT
+        public class GetUserCountsRes
+        {
+            [Required]
+            public string type { get; set; }
+            [Required]
+            public string message { get; set; }
+            public int totalUsersCount { get; set; }
+            public int totalActiveUsersCount { get; set; }
+        }
+
+        [HttpGet("[action]")]
+        [CheckAdminLogin(0, 1)]
+        public ActionResult<GetUserCountsRes> GetUserCounts()
+        {
+            var _userCollection = _connectionService.db().GetCollection<Users>("Users");
+            IQueryable<Users> queryableUsers = _userCollection.AsQueryable();
+
+            int totalUsersCount = queryableUsers.Count();
+            int totalActiveUsersCount = queryableUsers.Count(u => u.status == 1);
+
+            return Ok(new GetUserCountsRes
+            {
+                type = "success",
+                message = "User counts fetched successfully",
+                totalUsersCount = totalUsersCount,
+                totalActiveUsersCount = totalActiveUsersCount
+            });
+        }
         #endregion
     }
 }

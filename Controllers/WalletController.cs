@@ -64,7 +64,7 @@ namespace PaymentWall.Controllers
             var userIdFromSession = HttpContext.Session.GetString("id");
             if (string.IsNullOrEmpty(userIdFromSession))
             {
-                return Ok(new _listWalletRes { type = "error", message = _localizer["userNotLoggedIn"] });
+                return Ok(new _listWalletRes { type = "error", message = _localizer["userNotLoggedIn"].Value });
             }
 
             ObjectId userIdObj;
@@ -74,17 +74,17 @@ namespace PaymentWall.Controllers
             }
             catch
             {
-                return Ok(new _listWalletRes { type = "error", message = _localizer["invalidUserIdFormat"] });
+                return Ok(new _listWalletRes { type = "error", message = _localizer["invalidUserIdFormat"].Value });
             }
 
             var userWallets = _walletCollection.AsQueryable().Where(wallet => wallet.userId == userIdObj).ToList();
 
             if (userWallets == null || userWallets.Count == 0)
             {
-                return Ok(new _listWalletRes { type = "error", message = _localizer["noWalletsForUserId"] });
+                return Ok(new _listWalletRes { type = "error", message = _localizer["noWalletsForUserId"].Value });
             }
 
-            return Ok(new _listWalletRes { type = "success", message = _localizer["walletsFetchedSuccessfully"], wallets = userWallets });
+            return Ok(new _listWalletRes { type = "success", message = _localizer["walletsFetchedSuccessfully"].Value, wallets = userWallets });
         }
 
         #endregion
@@ -114,7 +114,7 @@ namespace PaymentWall.Controllers
 
             if (string.IsNullOrEmpty(userIdFromSession))
             {
-                return Ok(new _createWalletRes { type = "error", message = _localizer["unauthorizedRequest"] });
+                return Ok(new _createWalletRes { type = "error", message = _localizer["unauthorizedRequest"].Value });
             }
 
             var user = _userCollection.AsQueryable().FirstOrDefault(u => u._id.ToString() == userIdFromSession);
@@ -126,7 +126,7 @@ namespace PaymentWall.Controllers
             var existingWallet = _walletCollection.AsQueryable().FirstOrDefault(w => w.userId.ToString() == userIdFromSession && w.currency == req.currency);
             if (existingWallet != null)
             {
-                return Ok(new _createWalletRes { type = "error", message = _localizer["walletAlreadyExists"] });
+                return Ok(new _createWalletRes { type = "error", message = _localizer["walletAlreadyExists"].Value });
             }
 
             Wallet newWallet = new Wallet
@@ -134,12 +134,13 @@ namespace PaymentWall.Controllers
                 _id = GenerateUniqueWalletId(),
                 userId = ObjectId.Parse(userIdFromSession),
                 balance = 0,
-                currency = req.currency
+                currency = req.currency,
+                status = 1,
             };
 
             _walletCollection.InsertOne(newWallet);
 
-            return Ok(new _createWalletRes { type = "success", message = _localizer["walletCreatedSuccessfully"] });
+            return Ok(new _createWalletRes { type = "success", message = _localizer["walletCreatedSuccessfully"].Value });
         }
 
         #endregion

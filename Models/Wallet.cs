@@ -11,5 +11,6 @@ namespace PaymentWall.Models
         [BsonRepresentation(BsonType.Decimal128)]
         public decimal balance { get; set; }
         public string currency { get; set; }
+        public int status { get; set; }
     }
 }
