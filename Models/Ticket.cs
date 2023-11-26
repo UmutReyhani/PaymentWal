@@ -8,7 +8,9 @@ public class Ticket
     public ObjectId userId { get; set; }
     public string title { get; set; }
     public string description { get; set; }
-    public DateTimeOffset dateCreated { get; set; }
+    [BsonRepresentation(BsonType.DateTime)]
+    public DateTimeOffset date { get; set; }
+    [BsonRepresentation(BsonType.DateTime)]
     public DateTime? dateResolved { get; set; }
     public string adminResponse { get; set; }
     public int status { get; set; } = 0; // "Pending","Open", "Resolved"

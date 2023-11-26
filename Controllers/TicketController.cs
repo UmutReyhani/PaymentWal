@@ -54,7 +54,7 @@ public class TicketController : ControllerBase
             userId = ObjectId.Parse(userIdFromSession),
             title = req.title,
             description = req.description,
-            dateCreated = DateTimeOffset.UtcNow,
+            date = DateTimeOffset.UtcNow,
             status = 0
         };
 
@@ -110,12 +110,12 @@ public class TicketController : ControllerBase
 
         if (request.startDate.HasValue)
         {
-            query = query.Where(t => t.dateCreated >= request.startDate.Value);
+            query = query.Where(t => t.date >= request.startDate.Value);
         }
 
         if (request.endDate.HasValue)
         {
-            query = query.Where(t => t.dateCreated <= request.endDate.Value);
+            query = query.Where(t => t.date <= request.endDate.Value);
         }
 
         if (!request.pageNumber.HasValue)
@@ -213,7 +213,7 @@ public class TicketController : ControllerBase
             ticketId = t._id,
             title = t.title,
             description = t.description,
-            dateCreated = t.dateCreated,
+            dateCreated = t.date,
             dateResolved = t.dateResolved,
             adminResponse = t.adminResponse,
             status = t.status,
@@ -347,7 +347,7 @@ public class TicketController : ControllerBase
             userId = t.userId,
             title = t.title,
             description = t.description,
-            dateCreated = t.dateCreated
+            dateCreated = t.date
         }).ToList();
 
         var response = new PendingTicketsResponse

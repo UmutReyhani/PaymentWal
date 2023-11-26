@@ -1256,5 +1256,94 @@ namespace PaymentWall.Controllers
             });
         }
         #endregion
+
+        #region List Logs
+        public class ListLogsReq
+        {
+            public DateTime? startDate { get; set; }
+            public DateTime? endDate { get; set; }
+            public int? pageNumber { get; set; } = 1;
+            private int _pageSize = 10;
+            public int pageSize
+            {
+                get => _pageSize;
+                set => _pageSize = value > 50 ? 50 : value;
+            }
+        }
+
+        public class ListLogsRes
+        {
+            public string type { get; set; }
+            public List<Log> logs { get; set; }
+        }
+
+        [HttpPost("[action]")]
+        [CheckAdminLogin]
+        public ActionResult<ListLogsRes> ListLogs([FromBody] ListLogsReq req)
+        {
+            var _logCollection = _connectionService.db().GetCollection<Log>("Logs");
+            var query = _logCollection.AsQueryable();
+
+            if (req.startDate.HasValue)
+            {
+                query = query.Where(l => l.date >= req.startDate.Value);
+            }
+
+            if (req.endDate.HasValue)
+            {
+                query = query.Where(l => l.date <= req.endDate.Value);
+            }
+
+            var skip = (req.pageNumber.Value - 1) * req.pageSize;
+            var logs = query.Skip(skip).Take(req.pageSize).ToList();
+
+            return Ok(new ListLogsRes { type = "success", logs = logs });
+        }
+        #endregion
+
+        #region List Admin Logs
+        public class ListAdminLogsReq
+        {
+            public DateTime? startDate { get; set; }
+            public DateTime? endDate { get; set; }
+            public int? pageNumber { get; set; } = 1;
+            private int _pageSize = 10;
+            public int pageSize
+            {
+                get => _pageSize;
+                set => _pageSize = value > 50 ? 50 : value;
+            }
+        }
+
+        public class ListAdminLogsRes
+        {
+            public string type { get; set; }
+            public List<AdminLog> adminLogs { get; set; }
+        }
+
+        [HttpPost("[action]")]
+        [CheckAdminLogin]
+        public ActionResult<ListAdminLogsRes> ListAdminLogs([FromBody] ListAdminLogsReq req)
+        {
+            var _adminLogCollection = _connectionService.db().GetCollection<AdminLog>("AdminLogs");
+            var query = _adminLogCollection.AsQueryable();
+
+            if (req.startDate.HasValue)
+            {
+                query = query.Where(a => a.date >= req.startDate.Value);
+            }
+
+            if (req.endDate.HasValue)
+            {
+                query = query.Where(a => a.date <= req.endDate.Value);
+            }
+
+            var skip = (req.pageNumber.Value - 1) * req.pageSize;
+            var adminLogs = query.Skip(skip).Take(req.pageSize).ToList();
+
+            return Ok(new ListAdminLogsRes { type = "success", adminLogs = adminLogs });
+        }
+        #endregion
+
     }
 }
