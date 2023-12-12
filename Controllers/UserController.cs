@@ -381,6 +381,40 @@ namespace PaymentWall.Controllers
 
         #endregion
 
+        #region check login
+        [HttpPost("[action]")]
+        public ActionResult CheckLogin()
+        {
+            var userIdString = HttpContext.Session.GetString("id");
+            if (string.IsNullOrEmpty(userIdString))
+            {
+                return Ok(new { type = "fail", message = "User is not logged in." });
+            }
+
+            if (!ObjectId.TryParse(userIdString, out var userId))
+            {
+                return Ok(new { type = "fail", message = "Session error." });
+            }
+
+            var userCollection = _connectionService.db().GetCollection<Users>("Users");
+            var user = userCollection.Find(u => u._id == userId).FirstOrDefault();
+
+            if (user == null)
+            {
+                return Ok(new { type = "fail", message = "User not found." });
+            }
+            var userDetails = new
+            {
+                Name = user.name,
+                Surname = user.surname,
+                Email = user.email,
+                Status = user.status
+            };
+
+            return Ok(new { type = "success", message = "User is logged in.", userDetails = userDetails });
+        }
+        #endregion
+
         #region Update User
 
         public class _updateUserReq

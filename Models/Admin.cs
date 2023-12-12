@@ -1,6 +1,8 @@
 ﻿using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 using System;
+using System.Net.Sockets;
+using System.Text;
 
 namespace PaymentWall.Models
 {
