@@ -301,6 +301,63 @@ namespace PaymentWall.Controllers
 
         #endregion
 
+        #region Check Admin Login
+
+        public class _checkAdminLoginResData
+        {
+            public string id { get; set; }
+            public string name { get; set; }
+            public string email { get; set; }
+        }
+
+        public class _checkAdminLoginRes
+        {
+            [Required]
+            public string type { get; set; }
+            public string message { get; set; }
+            public _checkAdminLoginResData? data { get; set; }
+        }
+
+        [HttpPost("[action]")]
+        public ActionResult<_checkAdminLoginRes> CheckAdminLogin()
+        {
+            var adminIdString = HttpContext.Session.GetString("id");
+
+            if (string.IsNullOrEmpty(adminIdString))
+            {
+                return Ok(new _checkAdminLoginRes { type = "error", message = _localizer["adminNotLoggedIn"].Value });
+            }
+
+            if (!ObjectId.TryParse(adminIdString, out var adminId))
+            {
+                return Ok(new _checkAdminLoginRes { type = "error", message = _localizer["sessionError"].Value });
+            }
+
+            var adminCollection = _connectionService.db().GetCollection<Admin>("Admin");
+            var admin = adminCollection.Find(a => a._id == adminId).FirstOrDefault();
+
+            if (admin == null)
+            {
+                return Ok(new _checkAdminLoginRes { type = "error", message = _localizer["adminNotFound"].Value });
+            }
+
+            if (admin.active != 1)
+            {
+                return Ok(new _checkAdminLoginRes { type = "error", message = _localizer["adminNotActiveOrBanned"].Value });
+            }
+
+            var adminDetails = new _checkAdminLoginResData
+            {
+                id = admin._id.ToString(),
+                name = admin.name,
+                email = admin.email
+            };
+
+            return Ok(new _checkAdminLoginRes { type = "success", message = _localizer["adminIsLoggedIn"].Value, data = adminDetails });
+        }
+
+        #endregion
+
         #region Logout Admin
         public class _adminLogoutRes
         {

@@ -405,12 +405,12 @@ namespace PaymentWall.Controllers
             var userIdString = HttpContext.Session.GetString("id");
             if (string.IsNullOrEmpty(userIdString))
             {
-                return Ok(new _checkLoginRes { type = "error", message = "User is not logged in." });
+                return Ok(new _checkLoginRes { type = "error", message = _localizer["userNotLoggedIn"].Value });
             }
 
             if (!ObjectId.TryParse(userIdString, out var userId))
             {
-                return Ok(new _checkLoginRes { type = "error", message = "Session error." });
+                return Ok(new _checkLoginRes { type = "error", message = _localizer["sessionError"].Value });
             }
 
             var userCollection = _connectionService.db().GetCollection<Users>("Users");
@@ -418,12 +418,12 @@ namespace PaymentWall.Controllers
 
             if (user == null)
             {
-                return Ok(new _checkLoginRes { type = "error", message = "User not found." });
+                return Ok(new _checkLoginRes { type = "error", message = _localizer["userNotFound"].Value });
             }
 
             if (user.status != 1)
             {
-                return Ok(new _checkLoginRes { type = "error", message = "User is not active or banned." });
+                return Ok(new _checkLoginRes { type = "error", message = _localizer["userNotActiveOrBanned"].Value });
             }
 
             var userDetails = new _checkLoginResData
@@ -434,7 +434,7 @@ namespace PaymentWall.Controllers
                 email = user.email
             };
 
-            return Ok(new _checkLoginRes { type = "success", message = "User is logged in.", data = userDetails });
+            return Ok(new _checkLoginRes { type = "success", message = _localizer["userIsLoggedIn"].Value, data = userDetails });
         }
         #endregion
 
