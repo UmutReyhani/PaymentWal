@@ -382,18 +382,35 @@ namespace PaymentWall.Controllers
         #endregion
 
         #region check login
+
+        public class _checkLoginResData
+        {
+            public string id { get; set; }
+            public string name { get; set; }
+            public string surname { get; set; }
+
+            public string email { get; set; }
+
+        }
+        public class _checkLoginRes
+        {
+            [Required]
+            public string type { get; set; }
+            public string message { get; set; }
+            public _checkLoginResData? data { get; set; }
+        }
         [HttpPost("[action]")]
-        public ActionResult CheckLogin()
+        public ActionResult<_checkLoginRes> CheckLogin()
         {
             var userIdString = HttpContext.Session.GetString("id");
             if (string.IsNullOrEmpty(userIdString))
             {
-                return Ok(new { type = "fail", message = "User is not logged in." });
+                return Ok(new _checkLoginRes { type = "error", message = "User is not logged in." });
             }
 
             if (!ObjectId.TryParse(userIdString, out var userId))
             {
-                return Ok(new { type = "fail", message = "Session error." });
+                return Ok(new _checkLoginRes { type = "error", message = "Session error." });
             }
 
             var userCollection = _connectionService.db().GetCollection<Users>("Users");
@@ -401,17 +418,23 @@ namespace PaymentWall.Controllers
 
             if (user == null)
             {
-                return Ok(new { type = "fail", message = "User not found." });
+                return Ok(new _checkLoginRes { type = "error", message = "User not found." });
             }
-            var userDetails = new
+
+            if (user.status != 1)
             {
-                Name = user.name,
-                Surname = user.surname,
-                Email = user.email,
-                Status = user.status
+                return Ok(new _checkLoginRes { type = "error", message = "User is not active or banned." });
+            }
+
+            var userDetails = new _checkLoginResData
+            {
+                id = user._id.ToString(),
+                name = user.name,
+                surname = user.surname,
+                email = user.email
             };
 
-            return Ok(new { type = "success", message = "User is logged in.", userDetails = userDetails });
+            return Ok(new _checkLoginRes { type = "success", message = "User is logged in.", data = userDetails });
         }
         #endregion
 
