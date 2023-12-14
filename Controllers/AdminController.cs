@@ -1283,6 +1283,57 @@ namespace PaymentWall.Controllers
 
         #endregion
 
+        #region Get Limits
+        public class limitResponse
+        {
+            public decimal maxDeposit { get; set; }
+            public decimal minDeposit { get; set; }
+            public decimal dailyMaxDeposit { get; set; }
+            public decimal monthlyMaxDeposit { get; set; }
+            public decimal maxWithdrawal { get; set; }
+            public decimal minWithdrawal { get; set; }
+            public decimal dailyMaxWithdrawal { get; set; }
+            public decimal monthlyMaxWithdrawal { get; set; }
+            public decimal maxTransfer { get; set; }
+            public decimal minTransfer { get; set; }
+            public decimal dailyMaxTransfer { get; set; }
+            public decimal monthlyMaxTransfer { get; set; }
+            public int dailyMaxTransferCount { get; set; }
+        }
+
+        [HttpGet("GetLimits")]
+        public ActionResult<List<limitResponse>> GetLimits()
+        {
+            var _limitCollection = _connectionService.db().GetCollection<Limit>("Limit");
+            var limits = _limitCollection.AsQueryable()
+                .Select(l => new limitResponse
+                {
+                    maxDeposit = l.maxDeposit,
+                    minDeposit = l.minDeposit,
+                    dailyMaxDeposit = l.dailyMaxDeposit,
+                    monthlyMaxDeposit = l.monthlyMaxDeposit,
+                    maxWithdrawal = l.maxWithdrawal,
+                    minWithdrawal = l.minWithdrawal,
+                    dailyMaxWithdrawal = l.dailyMaxWithdrawal,
+                    monthlyMaxWithdrawal = l.monthlyMaxWithdrawal,
+                    maxTransfer = l.maxTransfer,
+                    minTransfer = l.minTransfer,
+                    dailyMaxTransfer = l.dailyMaxTransfer,
+                    monthlyMaxTransfer = l.monthlyMaxTransfer,
+                    dailyMaxTransferCount = l.dailyMaxTransferCount
+                })
+                .ToList();
+
+            if (limits == null || limits.Count == 0)
+            {
+                return NotFound(new { type = "error", message = "No limits found." });
+            }
+
+            return Ok(new { type = "success", message = "Limits retrieved successfully.", limits = limits });
+        }
+
+        #endregion
+
         #region GET USER COUNT
         public class GetUserCountsRes
         {
