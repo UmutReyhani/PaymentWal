@@ -18,9 +18,23 @@ builder.Services.AddSingleton<IStringLocalizerFactory, JsonStringLocalizerFactor
 builder.Services.AddSession(options =>
 {
     options.IdleTimeout = TimeSpan.FromMinutes(30);
+    options.Cookie.SameSite = SameSiteMode.None;
     options.Cookie.HttpOnly = true;
     options.Cookie.IsEssential = true;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+
 });
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("Default", builder => builder
+    .WithOrigins("https://127.0.0.1:5500", "https://backend.tradeional.com")
+    .AllowAnyHeader()
+    .AllowAnyMethod()
+    .AllowCredentials()
+        );
+});
+
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -36,17 +50,15 @@ builder.Services.AddSingleton<IConnectionService, ConnectionService>();
 // Add services to the container.
 builder.Services.AddControllers();
 
+
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+
+
 
 app.UseHttpsRedirection();
 
+app.UseCors("Default");
 app.UseSession();
 
 
@@ -86,6 +98,14 @@ app.Use(async (context, next) =>
     await next();
 });
 
+
+app.UseAuthorization();
+
+// Configure the HTTP request pipeline.
+
+app.UseSwagger();
+app.UseSwaggerUI();
+
 //dil bitis
 
 //var db = config.createMapper();
@@ -93,7 +113,6 @@ app.Use(async (context, next) =>
 //cl.InsertOne(new translationProvider { id = "IlkDeger", translation = new Dictionary<string, string> { { "de", "Almanca" }, { "en", "Ýngilizce" } } });
 
 
-app.UseAuthorization();
 
 app.MapControllers();
 
