@@ -76,6 +76,11 @@ namespace PaymentWall.Controllers
 
         #region Wallet Details
 
+        public class _walletDetailsRequest
+        {
+            public int walletId { get; set; }
+        }
+
         public class _walletDetailsResponse
         {
             public string type { get; set; }
@@ -86,7 +91,7 @@ namespace PaymentWall.Controllers
         }
 
         [HttpPost("[action]"), CheckUserLogin]
-        public ActionResult<_walletDetailsResponse> GetWalletDetails(int walletId)
+        public ActionResult<_walletDetailsResponse> GetWalletDetails(_walletDetailsRequest request)
         {
             var _walletCollection = _connectionService.db().GetCollection<Wallet>("Wallet");
             var _limitCollection = _connectionService.db().GetCollection<Limit>("Limit");
@@ -103,7 +108,7 @@ namespace PaymentWall.Controllers
 
             var userWallets = _walletCollection.AsQueryable().Where(w => w.userId == userObjectId).ToList();
 
-            if (!userWallets.Any(w => w._id == walletId))
+            if (!userWallets.Any(w => w._id == request.walletId))
             {
                 return Ok(new { message = _localizer["56"].Value });
             }
@@ -111,7 +116,7 @@ namespace PaymentWall.Controllers
             var userLimits = _limitCollection.AsQueryable().FirstOrDefault();
 
             var recentTransactions = _accountingCollection.AsQueryable()
-                .Where(a => a.walletId == walletId)
+                .Where(a => a.walletId == request.walletId)
                 .OrderByDescending(a => a.date)
                 .Take(5)
                 .ToList();
@@ -119,7 +124,7 @@ namespace PaymentWall.Controllers
             {
                 type = "success",
                 message = "Details fetched successfully.",
-                walletInfo = userWallets.First(w => w._id == walletId),
+                walletInfo = userWallets.First(w => w._id == request.walletId),
                 userLimits = userLimits,
                 recentTransactions = recentTransactions.ToArray()
             };
