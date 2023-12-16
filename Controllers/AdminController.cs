@@ -308,6 +308,11 @@ namespace PaymentWall.Controllers
             public string id { get; set; }
             public string name { get; set; }
             public string email { get; set; }
+            public DateTimeOffset lastLogin { get; set; }
+            public int role { get; set; }
+            public int active { get; set; }
+
+
         }
 
         public class _checkAdminLoginRes
@@ -350,7 +355,10 @@ namespace PaymentWall.Controllers
             {
                 id = admin._id.ToString(),
                 name = admin.name,
-                email = admin.email
+                email = admin.email,
+                role = admin.role,
+                active = admin.active,
+                lastLogin = admin.lastLogin
             };
 
             return Ok(new _checkAdminLoginRes { type = "success", message = _localizer["adminIsLoggedIn"].Value, data = adminDetails });

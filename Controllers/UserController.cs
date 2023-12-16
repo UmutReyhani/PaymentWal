@@ -388,9 +388,15 @@ namespace PaymentWall.Controllers
             public string id { get; set; }
             public string name { get; set; }
             public string surname { get; set; }
-
             public string email { get; set; }
-
+            public DateTimeOffset lastLogin { get; set; }
+            public int type { get; set; }
+            public int status { get; set; }
+            public string address { get; set; }
+            public string city { get; set; }
+            public string postCode { get; set; }
+            public string country { get; set; }
+            public string phoneNumber { get; set; }
         }
         public class _checkLoginRes
         {
@@ -425,13 +431,23 @@ namespace PaymentWall.Controllers
             {
                 return Ok(new _checkLoginRes { type = "error", message = _localizer["userNotActiveOrBanned"].Value });
             }
+            var addressCollection = _connectionService.db().GetCollection<Address>("Address");
+            var address = addressCollection.Find(a => a.userId == user._id).FirstOrDefault();
 
             var userDetails = new _checkLoginResData
             {
                 id = user._id.ToString(),
                 name = user.name,
                 surname = user.surname,
-                email = user.email
+                email = user.email,
+                lastLogin = user.lastLogin,
+                type = user.type,
+                status = user.status,
+                address = address?.address,
+                city = address?.city,
+                postCode = address?.postCode,
+                country = address?.country,
+                phoneNumber = address?.phoneNumber
             };
 
             return Ok(new _checkLoginRes { type = "success", message = _localizer["userIsLoggedIn"].Value, data = userDetails });
