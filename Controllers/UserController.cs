@@ -476,11 +476,6 @@ namespace PaymentWall.Controllers
         [HttpPost("[action]"), CheckUserLogin]
         public async Task<ActionResult<_updateUserRes>> updateUser([FromBody] _updateUserReq req)
         {
-            if (!config.avaibleCurrencies.Contains("USD"))
-            {
-                return Ok(req);
-            }
-
             var userIdFromSession = HttpContext.Session.GetString("id");
             if (string.IsNullOrEmpty(userIdFromSession))
             {
@@ -507,17 +502,26 @@ namespace PaymentWall.Controllers
             }
 
             var existingAddress = _addressCollection.AsQueryable().FirstOrDefault(a => a.userId == existingUser._id);
+            var addressUpdate = Builders<Address>.Update;
             if (existingAddress != null)
             {
-                var addressUpdate = Builders<Address>.Update
-                    .Set(a => a.address, req.address ?? existingAddress.address)
-                    .Set(a => a.city, req.city ?? existingAddress.city)
-                    .Set(a => a.postCode, req.postCode ?? existingAddress.postCode)
-                    .Set(a => a.phoneNumber, req.phoneNumber ?? existingAddress.phoneNumber);
+                var updateDefinitionList = new List<UpdateDefinition<Address>>();
 
-                await _addressCollection.UpdateOneAsync(a => a._id == existingAddress._id, addressUpdate);
+                if (!string.IsNullOrEmpty(req.address))
+                    updateDefinitionList.Add(addressUpdate.Set(a => a.address, req.address));
+
+                if (!string.IsNullOrEmpty(req.city))
+                    updateDefinitionList.Add(addressUpdate.Set(a => a.city, req.city));
+
+                if (!string.IsNullOrEmpty(req.postCode))
+                    updateDefinitionList.Add(addressUpdate.Set(a => a.postCode, req.postCode));
+
+                if (!string.IsNullOrEmpty(req.phoneNumber))
+                    updateDefinitionList.Add(addressUpdate.Set(a => a.phoneNumber, req.phoneNumber));
+
+                await _addressCollection.UpdateOneAsync(a => a._id == existingAddress._id, addressUpdate.Combine(updateDefinitionList));
             }
-            else if (req.address != null || req.city != null || req.postCode != null || req.phoneNumber != null)
+            else
             {
                 Address newAddress = new Address
                 {
@@ -534,6 +538,7 @@ namespace PaymentWall.Controllers
         }
 
         #endregion
+
 
         #region Logout User
         public class _logoutRes
