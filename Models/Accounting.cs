@@ -21,5 +21,7 @@ namespace PaymentWall.Models
         public DateTimeOffset date { get; set; }
         public ObjectId recipientUserId { get; set; }
         public ObjectId senderUserId { get; set; }
+        public string senderName { get; set; }
+        public string recipientName { get; set; }
     }
 }

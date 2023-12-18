@@ -85,53 +85,87 @@ namespace PaymentWall.Controllers
         {
             public string type { get; set; }
             public string message { get; set; }
-            public Wallet walletInfo { get; set; }
-            public Limit userLimits { get; set; }
-            public Accounting[] recentTransactions { get; set; }
+            public simpleWalletDetails walletInfo { get; set; }
+            public simpleAccountingDetails[] recentTransactions { get; set; }
+        }
+
+        public class simpleWalletDetails
+        {
+            public int _id { get; set; }
+            public decimal balance { get; set; }
+            public string currency { get; set; }
+            public int status { get; set; }
+        }
+
+        public class simpleAccountingDetails
+        {
+            public decimal amount { get; set; }
+            public int walletId { get; set; }
+            public string currency { get; set; }
+            public DateTimeOffset date { get; set; }
+            public string senderName { get; set; }  
+            public string recipientName { get; set; }
         }
 
         [HttpPost("[action]"), CheckUserLogin]
         public ActionResult<_walletDetailsResponse> GetWalletDetails(_walletDetailsRequest request)
         {
             var _walletCollection = _connectionService.db().GetCollection<Wallet>("Wallet");
-            var _limitCollection = _connectionService.db().GetCollection<Limit>("Limit");
+            var _userCollection = _connectionService.db().GetCollection<Users>("Users");
             var _accountingCollection = _connectionService.db().GetCollection<Accounting>("Accounting");
 
             var userIdFromSession = HttpContext.Session.GetString("id");
-
             if (string.IsNullOrEmpty(userIdFromSession))
             {
                 return Ok(new { message = _localizer["55"].Value });
             }
 
             var userObjectId = ObjectId.Parse(userIdFromSession);
-
             var userWallets = _walletCollection.AsQueryable().Where(w => w.userId == userObjectId).ToList();
-
             if (!userWallets.Any(w => w._id == request.walletId))
             {
                 return Ok(new { message = _localizer["56"].Value });
             }
-
-            var userLimits = _limitCollection.AsQueryable().FirstOrDefault();
 
             var recentTransactions = _accountingCollection.AsQueryable()
                 .Where(a => a.walletId == request.walletId)
                 .OrderByDescending(a => a.date)
                 .Take(5)
                 .ToList();
+
+            var transactionDetails = recentTransactions.Select(a => {
+                var sender = _userCollection.AsQueryable().FirstOrDefault(u => u._id == a.senderUserId);
+                var recipient = _userCollection.AsQueryable().FirstOrDefault(u => u._id == a.recipientUserId);
+
+                return new simpleAccountingDetails
+                {
+                    amount = a.amount,
+                    walletId = a.walletId,
+                    currency = a.currency,
+                    date = a.date,
+                    senderName = sender?.name,
+                    recipientName = recipient?.name
+                };
+            }).ToArray();
+
             var walletDetails = new _walletDetailsResponse
             {
                 type = "success",
                 message = "Details fetched successfully.",
-                walletInfo = userWallets.First(w => w._id == request.walletId),
-                userLimits = userLimits,
-                recentTransactions = recentTransactions.ToArray()
+                walletInfo = new simpleWalletDetails
+                {
+                    _id = userWallets.First(w => w._id == request.walletId)._id,
+                    balance = userWallets.First(w => w._id == request.walletId).balance,
+                    currency = userWallets.First(w => w._id == request.walletId).currency,
+                    status = userWallets.First(w => w._id == request.walletId).status
+                },
+                recentTransactions = transactionDetails
             };
 
             return Ok(walletDetails);
         }
 
         #endregion
+
     }
 }

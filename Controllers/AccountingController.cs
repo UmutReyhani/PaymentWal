@@ -7,6 +7,7 @@ using System.ComponentModel.DataAnnotations;
 using MongoDB.Bson.Serialization.Attributes;
 using PaymentWall.Attributes;
 using Microsoft.Extensions.Localization;
+using static PaymentWall.Controllers.AccountingController;
 
 namespace PaymentWall.Controllers
 {
@@ -43,6 +44,8 @@ namespace PaymentWall.Controllers
         {
             var _walletCollection = _connectionService.db().GetCollection<Wallet>("Wallet");
             var _accountingCollection = _connectionService.db().GetCollection<Accounting>("Accounting");
+            var _userCollection = _connectionService.db().GetCollection<Users>("Users");
+
 
             var userIdFromSession = HttpContext.Session.GetString("id");
             if (string.IsNullOrEmpty(userIdFromSession))
@@ -51,14 +54,13 @@ namespace PaymentWall.Controllers
             }
 
             var recipientId = transferData.recipientWalletId;
-            var recipient = _walletCollection.AsQueryable().FirstOrDefault(u => u._id == recipientId);
+            var recipient = _walletCollection.AsQueryable().FirstOrDefault(w => w._id == transferData.recipientWalletId);
             if (recipient == null)
             {
                 return Ok(new _transferResponse { type = "error", message = _localizer["2"].Value });
             }
 
             ObjectId userId = ObjectId.Parse(userIdFromSession);
-
             var sender = _walletCollection.AsQueryable().FirstOrDefault(w => w.userId == userId && w.currency == recipient.currency);
             if (sender == null)
             {
@@ -115,6 +117,12 @@ namespace PaymentWall.Controllers
             var recipientUpdate = Builders<Wallet>.Update.Inc(w => w.balance, transferData.amount);
             _walletCollection.UpdateOne(u => u._id == recipient._id, recipientUpdate);
 
+            var senderUser = _userCollection.AsQueryable().FirstOrDefault(u => u._id == sender.userId);
+            var recipientUser = _userCollection.AsQueryable().FirstOrDefault(u => u._id == recipient.userId);
+            var senderName = senderUser?.name;
+            var recipientName = recipientUser?.name;
+
+
             var senderAccounting = new Accounting
             {
                 userId = sender.userId,
@@ -122,7 +130,9 @@ namespace PaymentWall.Controllers
                 currency = sender.currency,
                 walletId = sender._id,
                 recipientUserId = recipient.userId,
-                date = DateTimeOffset.Now
+                date = DateTimeOffset.Now,
+                senderName = senderName,
+                recipientName = recipientName
             };
             _accountingCollection.InsertOne(senderAccounting);
 
@@ -134,6 +144,8 @@ namespace PaymentWall.Controllers
                 walletId = transferData.recipientWalletId,
                 senderUserId = sender.userId,
                 date = DateTimeOffset.Now,
+                senderName = senderName,
+                recipientName = recipientName
 
             };
             _accountingCollection.InsertOne(recipientAccounting);
@@ -248,6 +260,109 @@ namespace PaymentWall.Controllers
             });
         }
         #endregion
+
+        #region Wallet Details all
+
+        public class _transectionDetailsRequest
+        {
+            public int walletId { get; set; }
+            public DateTime? startDate { get; set; }
+            public DateTime? endDate { get; set; }
+            public int pageNumber { get; set; } = 1;
+            public int pageSize { get; set; } = 30;
+        }
+
+        public class _transectionDetailsResponse
+        {
+            public string type { get; set; }
+            public string message { get; set; }
+            public simpleTransectionDetails walletInfo { get; set; }
+            public simpleAccountinggDetails[] recentTransactions { get; set; }
+        }
+
+        public class simpleTransectionDetails
+        {
+            public int _id { get; set; }
+            public decimal balance { get; set; }
+            public string currency { get; set; }
+            public int status { get; set; }
+        }
+
+        public class simpleAccountinggDetails
+        {
+            public decimal amount { get; set; }
+            public int walletId { get; set; }
+            public string currency { get; set; }
+            public DateTimeOffset date { get; set; }
+            public string senderName { get; set; }    // Gönderenin ismi
+            public string recipientName { get; set; } // Alıcının ismi
+        }
+
+        [HttpPost("[action]"), CheckUserLogin]
+        public ActionResult<_transectionDetailsResponse> transectionHistory(_transectionDetailsRequest request)
+        {
+            var _walletCollection = _connectionService.db().GetCollection<Wallet>("Wallet");
+            var _userCollection = _connectionService.db().GetCollection<Users>("Users");
+            var _accountingCollection = _connectionService.db().GetCollection<Accounting>("Accounting");
+
+            var userIdFromSession = HttpContext.Session.GetString("id");
+            if (string.IsNullOrEmpty(userIdFromSession))
+            {
+                return Ok(new { message = _localizer["55"].Value });
+            }
+
+            var userObjectId = ObjectId.Parse(userIdFromSession);
+            var userWallets = _walletCollection.AsQueryable().Where(w => w.userId == userObjectId).ToList();
+            if (!userWallets.Any(w => w._id == request.walletId))
+            {
+                return Ok(new { message = _localizer["56"].Value });
+            }
+
+            var endDate = request.endDate ?? DateTime.UtcNow;
+            var startDate = request.startDate ?? endDate.AddDays(-30);
+            int pageNumber = request.pageNumber < 1 ? 1 : request.pageNumber;
+            int pageSize = request.pageSize > 50 ? 50 : (request.pageSize < 1 ? 30 : request.pageSize);
+
+            var recentTransactionsQuery = _accountingCollection.AsQueryable()
+                .Where(a => a.walletId == request.walletId && a.date >= startDate && a.date <= endDate)
+                .OrderByDescending(a => a.date)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize);
+
+            var transactionDetails = recentTransactionsQuery.ToList().Select(a => {
+                var sender = _userCollection.AsQueryable().FirstOrDefault(u => u._id == a.senderUserId);
+                var recipient = _userCollection.AsQueryable().FirstOrDefault(u => u._id == a.recipientUserId);
+
+                return new simpleAccountinggDetails
+                {
+                    amount = a.amount,
+                    walletId = a.walletId,
+                    currency = a.currency,
+                    date = a.date,
+                    senderName = sender?.name,
+                    recipientName = recipient?.name
+                };
+            }).ToArray();
+
+            var walletDetails = new _transectionDetailsResponse
+            {
+                type = "success",
+                message = "Details fetched successfully.",
+                walletInfo = new simpleTransectionDetails
+                {
+                    _id = userWallets.First(w => w._id == request.walletId)._id,
+                    balance = userWallets.First(w => w._id == request.walletId).balance,
+                    currency = userWallets.First(w => w._id == request.walletId).currency,
+                    status = userWallets.First(w => w._id == request.walletId).status
+                },
+                recentTransactions = transactionDetails
+            };
+
+            return Ok(walletDetails);
+        }
+
+        #endregion
+
 
     }
 }

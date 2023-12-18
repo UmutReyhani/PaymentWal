@@ -532,7 +532,6 @@ namespace PaymentWall.Controllers
             return Ok(new _updateUserRes { type = "success", message = _localizer["userUpdatedSuccessfully"].Value });
         }
 
-
         #endregion
 
         #region Logout User
