@@ -480,6 +480,7 @@ namespace PaymentWall.Controllers
             {
                 return Ok(req);
             }
+
             var userIdFromSession = HttpContext.Session.GetString("id");
             if (string.IsNullOrEmpty(userIdFromSession))
             {
@@ -497,7 +498,7 @@ namespace PaymentWall.Controllers
 
             if (!string.IsNullOrEmpty(req.newPassword))
             {
-                if (ComputeSha256Hash(req.oldPassword) != existingUser.password)
+                if (string.IsNullOrEmpty(req.oldPassword) || ComputeSha256Hash(req.oldPassword) != existingUser.password)
                 {
                     return Ok(new _updateUserRes { type = "error", message = _localizer["incorrectOldPassword"].Value });
                 }
@@ -516,7 +517,7 @@ namespace PaymentWall.Controllers
 
                 await _addressCollection.UpdateOneAsync(a => a._id == existingAddress._id, addressUpdate);
             }
-            else
+            else if (req.address != null || req.city != null || req.postCode != null || req.phoneNumber != null)
             {
                 Address newAddress = new Address
                 {
