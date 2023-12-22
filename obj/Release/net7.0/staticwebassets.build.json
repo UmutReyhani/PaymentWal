@@ -1,0 +1,11 @@
+{
+  "Version": 1,
+  "Hash": "d1PynItmgG3SToOnnFh1hHN/WUrTmg34Tz+CII+53Rw=",
+  "Source": "PaymentWall",
+  "BasePath": "_content/PaymentWall",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": []
+}

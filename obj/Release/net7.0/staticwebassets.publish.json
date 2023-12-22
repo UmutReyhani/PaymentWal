@@ -1,0 +1,11 @@
+{
+  "Version": 1,
+  "Hash": "wkBIziXfmw61WZJNGzq1NAmderJENOAAACx7UjZvdzc=",
+  "Source": "PaymentWall",
+  "BasePath": "_content/PaymentWall",
+  "Mode": "Default",
+  "ManifestType": "Publish",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": []
+}

@@ -19,6 +19,7 @@ namespace PaymentWall
             }
         }
 
+        public static bool isDevelopment = false;
         private static IMongoDatabase db { get; set; }
         public static IMongoDatabase createMapper()
         {
@@ -31,7 +32,7 @@ namespace PaymentWall
         }
         private static IMongoDatabase _createMapper()
         {
-            var str = $"mongodb://localhost:27017";
+            var str = isDevelopment? "mongodb://localhost:27017": "mongodb://paymentWall:paymentWall@10.10.10.61:27017/paymentWall";
             var mongoClient = new MongoClient(str);
             return mongoClient.GetDatabase("paymentWall");
         }

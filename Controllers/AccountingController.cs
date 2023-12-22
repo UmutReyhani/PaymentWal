@@ -278,7 +278,9 @@ namespace PaymentWall.Controllers
             public string message { get; set; }
             public simpleTransectionDetails walletInfo { get; set; }
             public simpleAccountinggDetails[] recentTransactions { get; set; }
+            public int totalItemsCount { get; set; }
         }
+
 
         public class simpleTransectionDetails
         {
@@ -294,8 +296,8 @@ namespace PaymentWall.Controllers
             public int walletId { get; set; }
             public string currency { get; set; }
             public DateTimeOffset date { get; set; }
-            public string senderName { get; set; }    // Gönderenin ismi
-            public string recipientName { get; set; } // Alıcının ismi
+            public string senderName { get; set; }
+            public string recipientName { get; set; }
         }
 
         [HttpPost("[action]"), CheckUserLogin]
@@ -320,6 +322,8 @@ namespace PaymentWall.Controllers
 
             var endDate = request.endDate ?? DateTime.UtcNow;
             var startDate = request.startDate ?? endDate.AddDays(-30);
+            int totalItemsCount = _accountingCollection.AsQueryable()
+                               .Count(a => a.walletId == request.walletId && a.date >= startDate && a.date <= endDate);
             int pageNumber = request.pageNumber < 1 ? 1 : request.pageNumber;
             int pageSize = request.pageSize > 50 ? 50 : (request.pageSize < 1 ? 30 : request.pageSize);
 
@@ -328,8 +332,10 @@ namespace PaymentWall.Controllers
                 .OrderByDescending(a => a.date)
                 .Skip((pageNumber - 1) * pageSize)
                 .Take(pageSize);
+            
 
-            var transactionDetails = recentTransactionsQuery.ToList().Select(a => {
+
+        var transactionDetails = recentTransactionsQuery.ToList().Select(a => {
                 var sender = _userCollection.AsQueryable().FirstOrDefault(u => u._id == a.senderUserId);
                 var recipient = _userCollection.AsQueryable().FirstOrDefault(u => u._id == a.recipientUserId);
 
@@ -355,14 +361,14 @@ namespace PaymentWall.Controllers
                     currency = userWallets.First(w => w._id == request.walletId).currency,
                     status = userWallets.First(w => w._id == request.walletId).status
                 },
-                recentTransactions = transactionDetails
+                recentTransactions = transactionDetails,
+                totalItemsCount = totalItemsCount
             };
 
             return Ok(walletDetails);
         }
 
         #endregion
-
 
     }
 }

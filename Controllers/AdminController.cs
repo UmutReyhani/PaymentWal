@@ -13,6 +13,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Data;
 using System.Reflection;
 using static PaymentWall.Controllers.AccountingController;
+using static PaymentWall.Controllers.AdminController;
 using static PaymentWall.Controllers.UserController;
 
 namespace PaymentWall.Controllers
@@ -339,8 +340,8 @@ namespace PaymentWall.Controllers
             }
 
             var adminCollection = _connectionService.db().GetCollection<Admin>("Admin");
-            var admin = adminCollection.Find(a => a._id == adminId).FirstOrDefault();
-
+            var admin = adminCollection.AsQueryable()
+                                       .FirstOrDefault(a => a._id == adminId);
             if (admin == null)
             {
                 return Ok(new _checkAdminLoginRes { type = "error", message = _localizer["adminNotFound"].Value });
@@ -513,6 +514,18 @@ namespace PaymentWall.Controllers
         #region Get All Admins
         public class adminFilterReq
         {
+            public DateTime? startDate { get; set; }
+            public DateTime? endDate { get; set; }
+            public int? page { get; set; }
+            private int _pageSize = 10;
+            public int pageSize
+            {
+                get => _pageSize;
+                set
+                {
+                    _pageSize = (value > 50) ? 50 : value;
+                }
+            }
             public int? role { get; set; }
             public int? active { get; set; }
         }
@@ -521,43 +534,75 @@ namespace PaymentWall.Controllers
         {
             public string type { get; set; }
             public string message { get; set; }
-            public List<Admin> admins { get; set; }
+            public List<AdminDto> admins { get; set; }
+            public int totalAdminsCount { get; set; }
+        }
+
+        public class AdminDto
+        {
+            public string _id { get; set; }
+            public string name { get; set; }
+            public string email { get; set; }
+            public int role { get; set; }
+            public int active { get; set; }
+            public int failedLoginAttempts { get; set; }
+            public DateTimeOffset lastLogin { get; set; }
         }
 
         [HttpPost("[action]")]
         [CheckAdminLogin(1)]
-        public ActionResult<_getAllAdminsRes> GetAllAdmins([FromBody] adminFilterReq filter)
+        public ActionResult<_getAllAdminsRes> GetAllAdmins([FromBody] adminFilterReq req)
         {
             var _adminCollection = _connectionService.db().GetCollection<Admin>("Admin");
+            IQueryable<Admin> queryableAdmins = _adminCollection.AsQueryable();
 
-            var query = _adminCollection.AsQueryable();
-
-            if (filter != null)
+            if (req.startDate.HasValue && req.endDate.HasValue)
             {
-                if (filter.role.HasValue)
-                {
-                    query = query.Where(a => a.role == filter.role.Value);
-                }
-
-                if (filter.active.HasValue)
-                {
-                    query = query.Where(a => a.active == filter.active.Value);
-                }
+                queryableAdmins = queryableAdmins.Where(a => a.lastLogin >= req.startDate.Value && a.lastLogin <= req.endDate.Value);
             }
 
-            var adminList = query.ToList();
-
-            if (adminList == null || adminList.Count == 0)
+            if (req.role.HasValue)
             {
-                return Ok(new _getAllAdminsRes { type = "error", message = _localizer["31"].Value });
+                queryableAdmins = queryableAdmins.Where(a => a.role == req.role.Value);
             }
 
-            foreach (var admin in adminList)
+            if (req.active.HasValue)
             {
-                admin.password = null;
+                queryableAdmins = queryableAdmins.Where(a => a.active == req.active.Value);
             }
 
-            return Ok(new _getAllAdminsRes { type = "success", message = _localizer["32"].Value, admins = adminList });
+            int totalAdminsCount = queryableAdmins.Count();
+
+            int currentPage = req.page.HasValue && req.page > 0 ? req.page.Value : 1;
+            int pageSize = req.pageSize > 0 ? req.pageSize : 10;
+
+            var admins = queryableAdmins
+                        .Skip((currentPage - 1) * pageSize)
+                        .Take(pageSize)
+                        .Select(admin => new AdminDto
+                        {
+                            _id = admin._id.ToString(),
+                            name = admin.name,
+                            email = admin.email,
+                            role = admin.role,
+                            active = admin.active,
+                            failedLoginAttempts = admin.failedLoginAttempts,
+                            lastLogin = admin.lastLogin
+                        })
+                        .ToList();
+
+            if (admins == null || admins.Count == 0)
+            {
+                return Ok(new _getAllAdminsRes { type = "error", message = _localizer["No admins found"].Value });
+            }
+
+            return Ok(new _getAllAdminsRes
+            {
+                type = "success",
+                message = _localizer["Admins fetched successfully"].Value,
+                admins = admins,
+                totalAdminsCount = totalAdminsCount
+            });
         }
 
         #endregion
@@ -694,6 +739,8 @@ namespace PaymentWall.Controllers
                     _pageSize = (value > 50) ? 50 : value;
                 }
             }
+            public int? status { get; set; } //0-1  passive-active
+
         }
 
         public class GetAllUsersRes
@@ -750,7 +797,10 @@ namespace PaymentWall.Controllers
                                                           u.surname.Contains(req.searchQuery) ||
                                                           u.email.Contains(req.searchQuery));
             }
-
+            if (req.status.HasValue)
+            {
+                queryableUsers = queryableUsers.Where(u => u.status == req.status.Value);
+            }
             int totalUsersCount = queryableUsers.Count();
 
             int currentPage = req.page.HasValue && req.page > 0 ? req.page.Value : 1;
@@ -917,27 +967,19 @@ namespace PaymentWall.Controllers
             public string type { get; set; }
             public string message { get; set; }
             public List<Accounting> transfers { get; set; }
+            public int totalTransfersCount { get; set; }
+
         }
 
-        [HttpGet("[action]")]
+        [HttpPost("[action]")]
         [CheckAdminLogin(0, 1)]
-        public ActionResult<transferListResponse> GetAllTransfers([FromQuery] transferFilterRequest filter)
+        public ActionResult<transferListResponse> GetAllTransfers([FromBody] transferFilterRequest filter)
         {
             var _accountingCollection = _connectionService.db().GetCollection<Accounting>("Accounting");
-            var query = (IMongoQueryable<Accounting>)_accountingCollection.AsQueryable();
+            var query = _accountingCollection.AsQueryable();
 
-            DateTime startDate;
-            DateTime endDate;
-            if (!filter.startDate.HasValue || !filter.endDate.HasValue)
-            {
-                startDate = DateTime.Now.AddDays(-30);
-                endDate = DateTime.Now;
-            }
-            else
-            {
-                startDate = filter.startDate.Value;
-                endDate = filter.endDate.Value;
-            }
+            DateTime startDate = filter.startDate ?? DateTime.Now.AddDays(-30);
+            DateTime endDate = filter.endDate ?? DateTime.Now;
 
             query = query.Where(a => a.date >= startDate && a.date <= endDate);
 
@@ -947,11 +989,12 @@ namespace PaymentWall.Controllers
                 query = query.Where(a => a.userId == userIdObj);
             }
 
-            if (filter.page.HasValue)
-            {
-                int skipAmount = (filter.page.Value - 1) * filter.pageSize;
-                query = query.Skip(skipAmount).Take(filter.pageSize);
-            }
+            int totalTransfersCount = query.Count();
+
+            int pageNumber = filter.page ?? 1;
+            int pageSize = filter.pageSize > 50 ? 50 : (filter.pageSize < 1 ? 10 : filter.pageSize);
+            int skipAmount = (pageNumber - 1) * pageSize;
+            query = query.Skip(skipAmount).Take(pageSize);
 
             var transfers = query.ToList();
 
@@ -959,7 +1002,8 @@ namespace PaymentWall.Controllers
             {
                 type = "success",
                 message = "Transfers retrieved successfully.",
-                transfers = transfers
+                transfers = transfers,
+                totalTransfersCount = totalTransfersCount
             };
 
             return Ok(response);
@@ -1036,26 +1080,38 @@ namespace PaymentWall.Controllers
         }
         #endregion
 
-        #region deposit Limit create
+        #region Combined Limit Creation
 
-        public class _setLimitReq
+        public class _setCombinedLimitReq
         {
+            // Deposit Limits
             public decimal maxDeposit { get; set; }
             public decimal minDeposit { get; set; }
             public decimal dailyMaxDeposit { get; set; }
             public decimal monthlyMaxDeposit { get; set; }
-        }
 
-        public class _limitRes
+            // Withdrawal Limits
+            public decimal maxWithdrawal { get; set; }
+            public decimal minWithdrawal { get; set; }
+            public decimal dailyMaxWithdrawal { get; set; }
+            public decimal monthlyMaxWithdrawal { get; set; }
+
+            // Transfer Limits
+            public decimal maxTransfer { get; set; }
+            public decimal minTransfer { get; set; }
+            public decimal dailyMaxTransfer { get; set; }
+            public decimal monthlyMaxTransfer { get; set; }
+            public int dailyMaxTransferCount { get; set; }
+        }
+        public class _setCombinedLimitRes
         {
             [Required]
-            public string type { get; set; }
-            public string message { get; set; }
+            public string Type { get; set; }
+            public string Message { get; set; }
         }
-
         [HttpPost("[action]")]
         [CheckAdminLogin(1)]
-        public ActionResult<_limitRes> AddLimit([FromBody] _setLimitReq req)
+        public ActionResult<_setCombinedLimitRes> AddCombinedLimit([FromBody] _setCombinedLimitReq req)
         {
             var _limitCollection = _connectionService.db().GetCollection<Limit>("Limit");
             var newLimit = new Limit
@@ -1063,29 +1119,60 @@ namespace PaymentWall.Controllers
                 maxDeposit = req.maxDeposit,
                 minDeposit = req.minDeposit,
                 dailyMaxDeposit = req.dailyMaxDeposit,
-                monthlyMaxDeposit = req.monthlyMaxDeposit
+                monthlyMaxDeposit = req.monthlyMaxDeposit,
+
+                maxWithdrawal = req.maxWithdrawal,
+                minWithdrawal = req.minWithdrawal,
+                dailyMaxWithdrawal = req.dailyMaxWithdrawal,
+                monthlyMaxWithdrawal = req.monthlyMaxWithdrawal,
+
+                maxTransfer = req.maxTransfer,
+                minTransfer = req.minTransfer,
+                dailyMaxTransfer = req.dailyMaxTransfer,
+                monthlyMaxTransfer = req.monthlyMaxTransfer,
+                dailyMaxTransferCount = req.dailyMaxTransferCount
             };
             _limitCollection.InsertOne(newLimit);
-            return Ok(new _limitRes { type = "success", message = _localizer["50"].Value });
+            return Ok(new _setCombinedLimitRes { Type = "success", Message = _localizer["LimitsSett"].Value });
         }
 
         #endregion
 
-        #region Update Deposit Limit
-
-        public class _updateLimitReq
+        #region limit update
+        public class _updateCombinedLimitReq
         {
-            [Required]
             public string limitId { get; set; }
+
+            // Deposit Limits
             public decimal? maxDeposit { get; set; }
             public decimal? minDeposit { get; set; }
             public decimal? dailyMaxDeposit { get; set; }
             public decimal? monthlyMaxDeposit { get; set; }
+
+            // Withdrawal Limits
+            public decimal? maxWithdrawal { get; set; }
+            public decimal? minWithdrawal { get; set; }
+            public decimal? dailyMaxWithdrawal { get; set; }
+            public decimal? monthlyMaxWithdrawal { get; set; }
+
+            // Transfer Limits
+            public decimal? maxTransfer { get; set; }
+            public decimal? minTransfer { get; set; }
+            public decimal? dailyMaxTransfer { get; set; }
+            public decimal? monthlyMaxTransfer { get; set; }
+            public int? dailyMaxTransferCount { get; set; }
         }
 
-        [HttpPost("UpdateLimit")]
+        public class _updateCombinedLimitRes
+        {
+            [Required]
+            public string Type { get; set; }
+            public string Message { get; set; }
+        }
+
+        [HttpPost("UpdateCombinedLimit")]
         [CheckAdminLogin(1)]
-        public async Task<ActionResult<_limitRes>> UpdateLimit([FromBody] _updateLimitReq req)
+        public async Task<ActionResult<_updateCombinedLimitRes>> UpdateCombinedLimit([FromBody] _updateCombinedLimitReq req)
         {
             var _limitCollection = _connectionService.db().GetCollection<Limit>("Limit");
             var _adminLogCollection = _connectionService.db().GetCollection<AdminLog>("AdminLog");
@@ -1093,7 +1180,7 @@ namespace PaymentWall.Controllers
 
             if (existingLimit == null)
             {
-                return Ok(new _limitRes { type = "error", message = _localizer["51"].Value });
+                return Ok(new _updateCombinedLimitRes { Type = "error", Message = _localizer["Limit not found"].Value });
             }
 
             var update = Builders<Limit>.Update;
@@ -1104,165 +1191,10 @@ namespace PaymentWall.Controllers
             if (req.dailyMaxDeposit.HasValue) updates.Add(update.Set(l => l.dailyMaxDeposit, req.dailyMaxDeposit.Value));
             if (req.monthlyMaxDeposit.HasValue) updates.Add(update.Set(l => l.monthlyMaxDeposit, req.monthlyMaxDeposit.Value));
 
-            var combinedUpdate = update.Combine(updates);
-            await _limitCollection.UpdateOneAsync(l => l._id == existingLimit._id, combinedUpdate);
-
-            var adminIdFromSession = HttpContext.Session.GetString("id");
-            ObjectId adminObjectId = ObjectId.Parse(adminIdFromSession);
-            var adminLog = new AdminLog
-            {
-                reason = "Updated Deposit Limit",
-                adminId = adminObjectId,
-                date = DateTimeOffset.Now,
-                type = 4,
-                userAgent = HttpContext.Request.Headers["User-Agent"].ToString(),
-                ip = HttpContext.Connection.RemoteIpAddress.ToString()
-            };
-            await _adminLogCollection.InsertOneAsync(adminLog);
-
-            return Ok(new _limitRes { type = "success", message = _localizer["52"].Value });
-        }
-
-        #endregion
-
-        #region Withdrawal Limit create
-
-        public class _setWithdrawalLimitReq
-        {
-            public decimal maxWithdrawal { get; set; }
-            public decimal minWithdrawal { get; set; }
-            public decimal dailyMaxWithdrawal { get; set; }
-            public decimal monthlyMaxWithdrawal { get; set; }
-        }
-
-        [HttpPost("[action]")]
-        public ActionResult<_limitRes> AddWithdrawalLimit([FromBody] _setWithdrawalLimitReq req)
-        {
-            var _limitCollection = _connectionService.db().GetCollection<Limit>("Limit");
-            var newLimit = new Limit
-            {
-                maxWithdrawal = req.maxWithdrawal,
-                minWithdrawal = req.minWithdrawal,
-                dailyMaxWithdrawal = req.dailyMaxWithdrawal,
-                monthlyMaxWithdrawal = req.monthlyMaxWithdrawal
-            };
-            _limitCollection.InsertOne(newLimit);
-            return Ok(new _limitRes { type = "success", message = _localizer["50"].Value });
-        }
-
-        #endregion
-
-        #region Update Withdrawal Limit
-
-        public class _updateWithdrawalLimitReq
-        {
-            [Required]
-            public string limitId { get; set; }
-            public decimal? maxWithdrawal { get; set; }
-            public decimal? minWithdrawal { get; set; }
-            public decimal? dailyMaxWithdrawal { get; set; }
-            public decimal? monthlyMaxWithdrawal { get; set; }
-        }
-
-        [HttpPost("UpdateWithdrawalLimit")]
-        [CheckAdminLogin(1)]
-        public async Task<ActionResult<_limitRes>> UpdateWithdrawalLimit([FromBody] _updateWithdrawalLimitReq req)
-        {
-            var _limitCollection = _connectionService.db().GetCollection<Limit>("Limit");
-            var _adminLogCollection = _connectionService.db().GetCollection<AdminLog>("AdminLog");
-            var existingLimit = _limitCollection.AsQueryable().FirstOrDefault(l => l._id.ToString() == req.limitId);
-
-            if (existingLimit == null)
-            {
-                return Ok(new _limitRes { type = "error", message = _localizer["51"].Value });
-            }
-
-            var update = Builders<Limit>.Update;
-            var updates = new List<UpdateDefinition<Limit>>();
-
             if (req.maxWithdrawal.HasValue) updates.Add(update.Set(l => l.maxWithdrawal, req.maxWithdrawal.Value));
             if (req.minWithdrawal.HasValue) updates.Add(update.Set(l => l.minWithdrawal, req.minWithdrawal.Value));
             if (req.dailyMaxWithdrawal.HasValue) updates.Add(update.Set(l => l.dailyMaxWithdrawal, req.dailyMaxWithdrawal.Value));
             if (req.monthlyMaxWithdrawal.HasValue) updates.Add(update.Set(l => l.monthlyMaxWithdrawal, req.monthlyMaxWithdrawal.Value));
-
-            var combinedUpdate = update.Combine(updates);
-            await _limitCollection.UpdateOneAsync(l => l._id == existingLimit._id, combinedUpdate);
-
-            var adminIdFromSession = HttpContext.Session.GetString("id");
-            ObjectId adminObjectId = ObjectId.Parse(adminIdFromSession);
-            var adminLog = new AdminLog
-            {
-                reason = "Updated Withdrawal Limit",
-                adminId = adminObjectId,
-                date = DateTimeOffset.Now,
-                type = 5,
-                userAgent = HttpContext.Request.Headers["User-Agent"].ToString(),
-                ip = HttpContext.Connection.RemoteIpAddress.ToString()
-            };
-            await _adminLogCollection.InsertOneAsync(adminLog);
-
-            return Ok(new _limitRes { type = "success", message = _localizer["52"].Value });
-        }
-
-        #endregion
-
-        #region Transfer Limit create
-
-        public class _setTransferLimitReq
-        {
-            public decimal maxTransfer { get; set; }
-            public decimal minTransfer { get; set; }
-            public decimal dailyMaxTransfer { get; set; }
-            public decimal monthlyMaxTransfer { get; set; }
-            public int dailyMaxTransferCount { get; set; }
-        }
-
-        [HttpPost("[action]")]
-        public ActionResult<_limitRes> AddTransferLimit([FromBody] _setTransferLimitReq req)
-        {
-            var _limitCollection = _connectionService.db().GetCollection<Limit>("Limit");
-            var newLimit = new Limit
-            {
-                maxTransfer = req.maxTransfer,
-                minTransfer = req.minTransfer,
-                dailyMaxTransfer = req.dailyMaxTransfer,
-                monthlyMaxTransfer = req.monthlyMaxTransfer,
-                dailyMaxTransferCount = req.dailyMaxTransferCount
-            };
-            _limitCollection.InsertOne(newLimit);
-            return Ok(new _limitRes { type = "success", message = _localizer["50"].Value });
-        }
-
-        #endregion
-
-        #region Update Transfer Limit
-
-        public class _updateTransferLimitReq
-        {
-            [Required]
-            public string limitId { get; set; }
-            public decimal? maxTransfer { get; set; }
-            public decimal? minTransfer { get; set; }
-            public decimal? dailyMaxTransfer { get; set; }
-            public decimal? monthlyMaxTransfer { get; set; }
-            public int? dailyMaxTransferCount { get; set; }
-        }
-
-        [HttpPost("UpdateTransferLimit")]
-        [CheckAdminLogin(1)]
-        public async Task<ActionResult<_limitRes>> UpdateTransferLimit([FromBody] _updateTransferLimitReq req)
-        {
-            var _limitCollection = _connectionService.db().GetCollection<Limit>("Limit");
-            var _adminLogCollection = _connectionService.db().GetCollection<AdminLog>("AdminLog");
-            var existingLimit = _limitCollection.AsQueryable().FirstOrDefault(l => l._id.ToString() == req.limitId);
-
-            if (existingLimit == null)
-            {
-                return Ok(new _limitRes { type = "error", message = _localizer["51"].Value });
-            }
-
-            var update = Builders<Limit>.Update;
-            var updates = new List<UpdateDefinition<Limit>>();
 
             if (req.maxTransfer.HasValue) updates.Add(update.Set(l => l.maxTransfer, req.maxTransfer.Value));
             if (req.minTransfer.HasValue) updates.Add(update.Set(l => l.minTransfer, req.minTransfer.Value));
@@ -1273,27 +1205,28 @@ namespace PaymentWall.Controllers
             var combinedUpdate = update.Combine(updates);
             await _limitCollection.UpdateOneAsync(l => l._id == existingLimit._id, combinedUpdate);
 
+
             var adminIdFromSession = HttpContext.Session.GetString("id");
             ObjectId adminObjectId = ObjectId.Parse(adminIdFromSession);
             var adminLog = new AdminLog
             {
-                reason = "Updated Transfer Limit",
+                reason = "Updated Combined Limit",
                 adminId = adminObjectId,
                 date = DateTimeOffset.Now,
-                type = 6,
+                type = 3,
                 userAgent = HttpContext.Request.Headers["User-Agent"].ToString(),
                 ip = HttpContext.Connection.RemoteIpAddress.ToString()
             };
             await _adminLogCollection.InsertOneAsync(adminLog);
 
-            return Ok(new _limitRes { type = "success", message = _localizer["52"].Value });
+            return Ok(new _updateCombinedLimitRes { Type = "success", Message = _localizer["Limits updated successfully"].Value });
         }
-
-        #endregion
+        #endregion        
 
         #region Get Limits
         public class limitResponse
         {
+            public string id { get; set; }
             public decimal maxDeposit { get; set; }
             public decimal minDeposit { get; set; }
             public decimal dailyMaxDeposit { get; set; }
@@ -1316,6 +1249,7 @@ namespace PaymentWall.Controllers
             var limits = _limitCollection.AsQueryable()
                 .Select(l => new limitResponse
                 {
+                    id = l._id.ToString(),
                     maxDeposit = l.maxDeposit,
                     minDeposit = l.minDeposit,
                     dailyMaxDeposit = l.dailyMaxDeposit,
@@ -1334,7 +1268,7 @@ namespace PaymentWall.Controllers
 
             if (limits == null || limits.Count == 0)
             {
-                return NotFound(new { type = "error", message = "No limits found." });
+                return Ok(new { type = "error", message = "No limits found." });
             }
 
             return Ok(new { type = "success", message = "Limits retrieved successfully.", limits = limits });
@@ -1391,6 +1325,8 @@ namespace PaymentWall.Controllers
         {
             public string type { get; set; }
             public List<Log> logs { get; set; }
+            public int totalLogsCount { get; set; }
+
         }
 
         [HttpPost("[action]")]
@@ -1410,10 +1346,12 @@ namespace PaymentWall.Controllers
                 query = query.Where(l => l.date <= req.endDate.Value);
             }
 
+            int totalLogsCount = query.Count();
+
             var skip = (req.pageNumber.Value - 1) * req.pageSize;
             var logs = query.Skip(skip).Take(req.pageSize).ToList();
 
-            return Ok(new ListLogsRes { type = "success", logs = logs });
+            return Ok(new ListLogsRes { type = "success", logs = logs, totalLogsCount = totalLogsCount });
         }
         #endregion
 
@@ -1435,6 +1373,7 @@ namespace PaymentWall.Controllers
         {
             public string type { get; set; }
             public List<AdminLog> adminLogs { get; set; }
+            public int totalLogsCount { get; set; }
         }
 
         [HttpPost("[action]")]
@@ -1454,11 +1393,59 @@ namespace PaymentWall.Controllers
                 query = query.Where(a => a.date <= req.endDate.Value);
             }
 
+            int totalLogsCount = query.Count();
+
             var skip = (req.pageNumber.Value - 1) * req.pageSize;
             var adminLogs = query.Skip(skip).Take(req.pageSize).ToList();
 
-            return Ok(new ListAdminLogsRes { type = "success", adminLogs = adminLogs });
+            return Ok(new ListAdminLogsRes { type = "success", adminLogs = adminLogs, totalLogsCount = totalLogsCount });
         }
+        #endregion
+
+        #region translate add
+        public class AddTranslationRequest
+        {
+            public string _id { get; set; }
+            public Dictionary<string, string> Translation { get; set; }
+        }
+
+        [HttpPost("AddTranslation")]
+        [CheckAdminLogin(1)]
+        public IActionResult AddTranslation([FromBody] AddTranslationRequest request)
+        {
+            var _translationProviderCollection = _connectionService.db().GetCollection<translationProvider>("translationProvider");
+
+            if (request.Translation == null || !request.Translation.Any())
+            {
+                return BadRequest("Çeviri bilgisi boş olamaz.");
+            }
+
+            var newTranslation = new translationProvider
+            {
+                id = request._id.ToString(),
+                translation = request.Translation
+            };
+
+            _translationProviderCollection.InsertOne(newTranslation);
+            return Ok("Çeviri başarıyla eklendi.");
+
+
+        }
+        #endregion
+
+        #region veri silme collection 
+
+        [HttpPost("ClearCollection")]
+        [CheckAdminLogin(1)]
+        public IActionResult ClearCollection()
+        {
+            var _collection = _connectionService.db().GetCollection<Ticket>("Tickets");
+
+            _collection.DeleteMany(Builders<Ticket>.Filter.Empty);
+
+            return Ok("Ticket collection içindeki tüm veriler başarıyla temizlendi.");
+        }
+
         #endregion
 
     }

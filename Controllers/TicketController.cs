@@ -69,7 +69,8 @@ public class TicketController : ControllerBase
     #region List All Tickets by email
     public class _listAllTicketsReq
     {
-        public string userEmail { get; set; }
+        public string? userEmail { get; set; }
+        public int? status { get; set; }
         public DateTime? startDate { get; set; }
         public DateTime? endDate { get; set; }
         public int? pageNumber { get; set; }
@@ -87,25 +88,41 @@ public class TicketController : ControllerBase
     public class _listAllTicketsRes
     {
         public string type { get; set; }
-        public List<Ticket> tickets { get; set; }
+        public List<TicketViewModels> tickets { get; set; }
+        public int totalTickets { get; set; }
+
+    }
+    public class TicketViewModels
+    {
+        public string ticketId { get; set; }
+        public string userId { get; set; }
+        public string userEmail { get; set; }
+        public string title { get; set; }
+        public string description { get; set; }
+        public DateTimeOffset dateCreated { get; set; }
+        public int status { get; set; }
     }
 
     [HttpPost("[action]"), CheckAdminLogin(0, 1)]
     public ActionResult<_listAllTicketsRes> ListAllTicketsForAdmin([FromBody] _listAllTicketsReq request)
     {
         var _ticketCollection = _connectionService.db().GetCollection<Ticket>("Tickets");
+        var _userCollection = _connectionService.db().GetCollection<Users>("Users");
 
         var query = _ticketCollection.AsQueryable();
 
         if (!string.IsNullOrEmpty(request.userEmail))
         {
-            var _userCollection = _connectionService.db().GetCollection<Users>("Users");
             var user = _userCollection.AsQueryable().FirstOrDefault(u => u.email == request.userEmail);
-
             if (user != null)
             {
                 query = query.Where(t => t.userId == user._id);
             }
+        }
+
+        if (request.status.HasValue)
+        {
+            query = query.Where(t => t.status == request.status.Value);
         }
 
         if (request.startDate.HasValue)
@@ -118,19 +135,37 @@ public class TicketController : ControllerBase
             query = query.Where(t => t.date <= request.endDate.Value);
         }
 
+        int totalTickets = query.Count();
+
         if (!request.pageNumber.HasValue)
         {
             request.pageNumber = 1;
         }
 
+        if (!request.pageNumber.HasValue || request.pageNumber < 1)
+        {
+            request.pageNumber = 1;
+        }
         var skip = (request.pageNumber.Value - 1) * request.pageSize;
+        var tickets = query.Skip(skip).Take(request.pageSize).ToList();
 
-        var tickets = ((IMongoQueryable<Ticket>)query).Skip(skip).Take(request.pageSize).ToList();
+        var users = _userCollection.AsQueryable().ToList();
+        var ticketViewModels = tickets.Select(t => {
+            var user = users.FirstOrDefault(u => u._id == t.userId);
+            return new TicketViewModels
+            {
+                ticketId = t._id.ToString(),
+                userId = t.userId.ToString(),
+                userEmail = user?.email,
+                title = t.title,
+                description = t.description,
+                dateCreated = t.date,
+                status = t.status
+            };
+        }).ToList();
 
-        return Ok(new _listAllTicketsRes { type = "success", tickets = tickets });
+        return Ok(new _listAllTicketsRes { type = "success", tickets = ticketViewModels, totalTickets = totalTickets });
     }
-
-
     #endregion
 
     #region Admin Response
@@ -156,12 +191,11 @@ public class TicketController : ControllerBase
     {
         var _ticketCollection = _connectionService.db().GetCollection<Ticket>("Tickets");
 
-        var ticket = _ticketCollection.Find(t => t._id == ObjectId.Parse(data.ticketId)).FirstOrDefault();
-        if (ticket == null)
-            return NotFound(new { type = "error", message = _localizer["ticketNotFound"].Value });
+        var ticket = _ticketCollection.AsQueryable()
+                                      .FirstOrDefault(t => t._id == ObjectId.Parse(data.ticketId));
 
-        ticket.adminResponse = data.response;
-        ticket.status = 1;
+        if (ticket == null)
+            return Ok(new _adminResponseToTicketRes { type = "error", message = _localizer["ticketNotFound"].Value });
 
         var update = Builders<Ticket>.Update
                                      .Set(t => t.adminResponse, data.response)
@@ -180,13 +214,19 @@ public class TicketController : ControllerBase
     {
         [Required]
         public string type { get; set; }
-        public List<Ticket> tickets { get; set; }
+        public List<ticketViewModel> tickets { get; set; }
         public string message { get; set; }
+        public int totalTicketsCount { get; set; }
+    }
+    public class ListUserTicketsRequest
+    {
+        public int Page { get; set; } = 1;
+        public int PageSize { get; set; } = 10;
     }
 
     public class ticketViewModel
     {
-        public ObjectId ticketId { get; set; }
+        public string ticketId { get; set; }
         public string title { get; set; }
         public string description { get; set; }
         public DateTimeOffset dateCreated { get; set; }
@@ -197,20 +237,32 @@ public class TicketController : ControllerBase
 
 
 
-    [HttpGet("[action]"), CheckUserLogin]
-    public ActionResult<_listUserTicketsRes> ListUserTickets()
+    [HttpPost("[action]")]
+    [CheckUserLogin]
+    public ActionResult<_listUserTicketsRes> ListUserTickets([FromBody] ListUserTicketsRequest req)
     {
         var userIdFromSession = HttpContext.Session.GetString("id");
         if (string.IsNullOrEmpty(userIdFromSession))
+        {
             return Unauthorized(new { type = "error", message = _localizer["userNotLoggedIn"].Value });
+        }
 
         var _ticketCollection = _connectionService.db().GetCollection<Ticket>("Tickets");
+        var query = _ticketCollection.AsQueryable()
+                                     .Where(t => t.userId == ObjectId.Parse(userIdFromSession));
 
-        var userTickets = _ticketCollection.Find(t => t.userId == ObjectId.Parse(userIdFromSession)).ToList();
+        int totalTicketsCount = query.Count();
+
+        int pageNumber = req.Page < 1 ? 1 : req.Page;
+        int pageSize = req.PageSize > 50 ? 50 : (req.PageSize < 1 ? 10 : req.PageSize);
+
+        var userTickets = query.Skip((pageNumber - 1) * pageSize)
+                               .Take(pageSize)
+                               .ToList();
 
         var ticketViewModels = userTickets.Select(t => new ticketViewModel
         {
-            ticketId = t._id,
+            ticketId = t._id.ToString(),
             title = t.title,
             description = t.description,
             dateCreated = t.date,
@@ -219,7 +271,12 @@ public class TicketController : ControllerBase
             status = t.status,
         }).ToList();
 
-        return Ok(new { type = "success", tickets = ticketViewModels });
+        return Ok(new _listUserTicketsRes
+        {
+            type = "success",
+            tickets = ticketViewModels,
+            totalTicketsCount = totalTicketsCount
+        });
     }
     #endregion
 
@@ -241,10 +298,10 @@ public class TicketController : ControllerBase
             return Unauthorized(new { type = "error", message = _localizer["userNotLoggedIn"].Value });
 
         var _ticketCollection = _connectionService.db().GetCollection<Ticket>("Tickets");
-        var ticket = _ticketCollection.Find(t => t._id == ObjectId.Parse(ticketId) && t.userId == ObjectId.Parse(userIdFromSession)).FirstOrDefault();
-
+        var ticket = _ticketCollection.AsQueryable()
+                                      .FirstOrDefault(t => t._id == ObjectId.Parse(ticketId) && t.userId == ObjectId.Parse(userIdFromSession));
         if (ticket == null)
-            return NotFound(new _getUserTicketDetailRes { type = "error", message = _localizer["ticketNotFoundOrNotAuthorized"].Value });
+            return Ok(new _getUserTicketDetailRes { type = "error", message = _localizer["ticketNotFoundOrNotAuthorized"].Value });
 
         return Ok(new _getUserTicketDetailRes { type = "success", ticket = ticket });
     }
@@ -309,13 +366,61 @@ public class TicketController : ControllerBase
     #endregion
 
     #region List Resolved Tickets
-    [HttpGet("[action]")]
-    [CheckAdminLogin(0,1)]
-    public ActionResult<List<Ticket>> ListResolvedTickets()
+
+    public class ListResolvedTicketsRequest
+    {
+        public int Page { get; set; } = 1;
+        public int PageSize { get; set; } = 10;
+    }
+
+    public class ResolvedTicketsResponse
+    {
+        public string type { get; set; }
+        public string message { get; set; }
+        public List<TicketViewModel> tickets { get; set; }
+        public int totalTicketsCount { get; set; }
+    }
+
+
+
+    [HttpPost("[action]")]
+    [CheckAdminLogin(0, 1)]
+    public ActionResult<ResolvedTicketsResponse> ListResolvedTickets([FromBody] ListResolvedTicketsRequest request)
     {
         var _ticketCollection = _connectionService.db().GetCollection<Ticket>("Tickets");
-        var resolvedTickets = _ticketCollection.Find(t => t.status == 3).ToList();
-        return Ok(resolvedTickets);
+
+        var query = _ticketCollection.AsQueryable()
+            .Where(t => t.status == 3);
+
+        int totalTicketsCount = query.Count();
+
+        int pageNumber = request.Page < 1 ? 1 : request.Page;
+        int pageSize = request.PageSize > 50 ? 50 : (request.PageSize < 1 ? 10 : request.PageSize);
+
+        var resolvedTickets = query.Skip((pageNumber - 1) * pageSize)
+                                   .Take(pageSize)
+                                   .ToList();
+        var ticketViewModels = query.Skip((pageNumber - 1) * pageSize)
+                            .Take(pageSize)
+                            .Select(t => new TicketViewModel
+                            {
+                                userId = t.userId.ToString(),
+                                ticketId = t._id.ToString(),
+                                title = t.title,
+                                description = t.description,
+                                dateCreated = t.date
+                            })
+                            .ToList();
+
+        var response = new ResolvedTicketsResponse
+        {
+            type = "success",
+            message = "Resolved tickets retrieved successfully.",
+            tickets = ticketViewModels,
+            totalTicketsCount = totalTicketsCount
+        };
+
+        return Ok(response);
     }
     #endregion
 
@@ -323,28 +428,52 @@ public class TicketController : ControllerBase
 
     public class PendingTicketsResponse
     {
+        [Required]
+        public string type { get; set; }
+        public string message { get; set; }
         public List<TicketViewModel> tickets { get; set; }
         public int totalCount { get; set; }
     }
-
+    public class ListPendingTicketsRequest
+    {
+        public int Page { get; set; } = 1;
+        public int PageSize { get; set; } = 10;
+    }
     public class TicketViewModel
     {
-        public ObjectId userId { get; set; }
+        public string userId { get; set; }
+        public string ticketId { get; set; }
         public string title { get; set; }
         public string description { get; set; }
         public DateTimeOffset dateCreated { get; set; }
     }
 
-    [HttpGet("[action]")]
-    [CheckAdminLogin(0,1)]
-    public ActionResult<PendingTicketsResponse> ListPendingTicketsWithCount()
+    [HttpPost("[action]")]
+    [CheckAdminLogin(0, 1)]
+    public ActionResult<PendingTicketsResponse> ListPendingTicketsWithCount([FromBody] ListPendingTicketsRequest request)
     {
         var _ticketCollection = _connectionService.db().GetCollection<Ticket>("Tickets");
-        var pendingTickets = _ticketCollection.Find(t => t.status == 1).ToList();
+
+        var pendingTicketsQuery = _ticketCollection.AsQueryable()
+            .Where(t => t.status == 0);
+
+        // Toplam bilet sayısını hesaplama
+        int totalTicketsCount = pendingTicketsQuery.Count();
+
+        // Sayfa numarası ve sayfa boyutu kontrolü
+        int pageNumber = request.Page < 1 ? 1 : request.Page;
+        int pageSize = request.PageSize > 50 ? 50 : (request.PageSize < 1 ? 10 : request.PageSize);
+
+        // Sayfalama uygulama
+        var pendingTickets = pendingTicketsQuery
+            .Skip((pageNumber - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
 
         var ticketViewModels = pendingTickets.Select(t => new TicketViewModel
         {
-            userId = t.userId,
+            userId = t.userId.ToString(),
+            ticketId = t._id.ToString(),
             title = t.title,
             description = t.description,
             dateCreated = t.date
@@ -352,8 +481,10 @@ public class TicketController : ControllerBase
 
         var response = new PendingTicketsResponse
         {
+            type = "success",
+            message = "Pending tickets retrieved successfully.",
             tickets = ticketViewModels,
-            totalCount = ticketViewModels.Count
+            totalCount = totalTicketsCount
         };
 
         return Ok(response);

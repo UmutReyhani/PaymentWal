@@ -10,6 +10,11 @@ var builder = WebApplication.CreateBuilder(args);
 
 
 
+if (builder.Environment.IsDevelopment())
+{
+    config.isDevelopment = true;
+}
+
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 #region dil 
 builder.Services.AddDistributedMemoryCache().AddMemoryCache().AddLocalization();
@@ -52,7 +57,6 @@ builder.Services.AddControllers();
 
 
 var app = builder.Build();
-
 
 
 
