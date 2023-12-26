@@ -97,6 +97,8 @@ public class TicketController : ControllerBase
         public string ticketId { get; set; }
         public string userId { get; set; }
         public string userEmail { get; set; }
+        public string name { get; set; }
+        public string surname { get; set; }
         public string title { get; set; }
         public string description { get; set; }
         public DateTimeOffset dateCreated { get; set; }
@@ -157,6 +159,8 @@ public class TicketController : ControllerBase
                 ticketId = t._id.ToString(),
                 userId = t.userId.ToString(),
                 userEmail = user?.email,
+                name = user?.name,
+                surname = user?.surname,
                 title = t.title,
                 description = t.description,
                 dateCreated = t.date,

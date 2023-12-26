@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Localization;
 using MongoDB.Bson;
+using MongoDB.Bson.Serialization.Attributes;
 using MongoDB.Driver;
 using MongoDB.Driver.Linq;
 using PaymentWall.Attributes;
@@ -154,7 +155,7 @@ namespace PaymentWall.Controllers
                 updatedStatus = 1,
                 reason = _localizer["14"].Value,
                 role = data.role,
-                adminId = newAdmin._id
+                adminId = newAdmin._id,
             };
             var _adminLogCollection = _connectionService.db().GetCollection<AdminLog>("AdminLog");
             _adminLogCollection.InsertOne(adminLog);
@@ -277,7 +278,7 @@ namespace PaymentWall.Controllers
 
             AdminLog adminLog = new AdminLog
             {
-                userId = admin._id,
+                adminId = admin._id,
                 date = DateTimeOffset.UtcNow,
                 ip = GetUserIpAddress(),
                 userAgent = userAgent,
@@ -673,7 +674,7 @@ namespace PaymentWall.Controllers
             public string userId { get; set; }
             [Required]
             public int status { get; set; }  // 0: passive, 1: active 2: banned
-            public string description { get; set; }  // Açıklama veya sebep
+            public string reason { get; set; }  // Açıklama veya sebep
 
         }
 
@@ -710,6 +711,7 @@ namespace PaymentWall.Controllers
                 previousStatus = existingUser.status,
                 updatedStatus = req.status,
                 date = DateTimeOffset.Now,
+                reason = req.reason,
                 type = 3,
                 userAgent = HttpContext.Request.Headers["User-Agent"].ToString(),
                 ip = HttpContext.Connection.RemoteIpAddress.ToString()
@@ -1330,7 +1332,7 @@ namespace PaymentWall.Controllers
         }
 
         [HttpPost("[action]")]
-        [CheckAdminLogin]
+        [CheckAdminLogin(1)]
         public ActionResult<ListLogsRes> ListLogs([FromBody] ListLogsReq req)
         {
             var _logCollection = _connectionService.db().GetCollection<Log>("Logs");
@@ -1372,16 +1374,41 @@ namespace PaymentWall.Controllers
         public class ListAdminLogsRes
         {
             public string type { get; set; }
-            public List<AdminLog> adminLogs { get; set; }
+            public List<adminViewModelStatusUpdate> adminLogs { get; set; }
             public int totalLogsCount { get; set; }
+        }
+        public class adminViewModelStatusUpdate
+        {
+            public string userId { get; set; }
+            [BsonRepresentation(BsonType.DateTime)]
+            public DateTimeOffset date { get; set; }
+            public string userAgent { get; set; }
+            public string ip { get; set; }
+            public int type { get; set; }  // register-login-logout-update-delete(0-1-2-3-4)
+            public int? previousStatus { get; set; }
+            public int updatedStatus { get; set; }
+            public string reason { get; set; }
+            public int role { get; set; }
+            public string adminId { get; set; }
+            public string? ticketId { get; set; }
+            public int? previousTicketStatus { get; set; }
+            public int? updatedTicketStatus { get; set; }
+            public string? adminName { get; set; }
+            public string? userSurname { get; set; }
+            public string? userName { get; set; }
+
         }
 
         [HttpPost("[action]")]
-        [CheckAdminLogin]
+        [CheckAdminLogin(1)]
         public ActionResult<ListAdminLogsRes> ListAdminLogs([FromBody] ListAdminLogsReq req)
         {
-            var _adminLogCollection = _connectionService.db().GetCollection<AdminLog>("AdminLogs");
+            var _adminLogCollection = _connectionService.db().GetCollection<AdminLog>("AdminLog");
+            var _adminCollection = _connectionService.db().GetCollection<Admin>("Admin");
+            var _userCollection = _connectionService.db().GetCollection<Users>("Users");
+
             var query = _adminLogCollection.AsQueryable();
+
 
             if (req.startDate.HasValue)
             {
@@ -1396,7 +1423,33 @@ namespace PaymentWall.Controllers
             int totalLogsCount = query.Count();
 
             var skip = (req.pageNumber.Value - 1) * req.pageSize;
-            var adminLogs = query.Skip(skip).Take(req.pageSize).ToList();
+            var adminLogsQuery = query.Skip(skip).Take(req.pageSize);
+
+            var adminLogs = adminLogsQuery.ToList().Select(log =>
+            {
+                var admin = _adminCollection.AsQueryable().FirstOrDefault(a => a._id == log.adminId);
+                var user = _userCollection.AsQueryable().FirstOrDefault(u => u._id == log.userId);
+
+                return new adminViewModelStatusUpdate
+            {
+                    userId = log.userId.ToString(),
+                    userName = user?.name,
+                    userSurname = user?.surname,
+                    date = log.date,
+                    userAgent = log.userAgent,
+                    ip = log.ip,
+                    type = log.type,
+                    previousStatus = log.previousStatus,
+                    updatedStatus = log.updatedStatus,
+                    reason = log.reason,
+                    role = log.role,
+                    adminId = log.adminId.ToString(),
+                    ticketId = log.ticketId.ToString(),
+                    previousTicketStatus = log.previousTicketStatus,
+                    updatedTicketStatus = log.updatedTicketStatus,
+                    adminName = admin?.name,
+            };
+            }).ToList();
 
             return Ok(new ListAdminLogsRes { type = "success", adminLogs = adminLogs, totalLogsCount = totalLogsCount });
         }
@@ -1439,11 +1492,11 @@ namespace PaymentWall.Controllers
         [CheckAdminLogin(1)]
         public IActionResult ClearCollection()
         {
-            var _collection = _connectionService.db().GetCollection<Ticket>("Tickets");
+            var _collection = _connectionService.db().GetCollection<AdminLog>("AdminLog");
 
-            _collection.DeleteMany(Builders<Ticket>.Filter.Empty);
+            _collection.DeleteMany(Builders<AdminLog>.Filter.Empty);
 
-            return Ok("Ticket collection içindeki tüm veriler başarıyla temizlendi.");
+            return Ok("AdminLog collection içindeki tüm veriler başarıyla temizlendi.");
         }
 
         #endregion
