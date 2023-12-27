@@ -1470,7 +1470,7 @@ namespace PaymentWall.Controllers
 
             if (request.Translation == null || !request.Translation.Any())
             {
-                return BadRequest("Çeviri bilgisi boş olamaz.");
+                return Ok("Çeviri bilgisi boş olamaz.");
             }
 
             var newTranslation = new translationProvider
