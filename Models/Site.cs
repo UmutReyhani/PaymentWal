@@ -13,7 +13,7 @@ namespace PaymentWall.Models
         public string? detail { get; set; }
         [BsonRepresentation(BsonType.Decimal128)]
         public decimal tax { get; set; }
-        public string currency { get; set; } //CHF EUR TRY
+        public string[] currency { get; set; } //CHF EUR TRY
         [BsonRepresentation(BsonType.Decimal128)]
         public decimal fees { get; set; }
         public int maxFailedLoginAttempts { get; set; } = 10;

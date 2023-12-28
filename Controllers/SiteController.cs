@@ -82,7 +82,7 @@ namespace PaymentWall.Controllers
             public string domain { get; set; }
             public string detail { get; set; }
             public decimal tax { get; set; }
-            public string currency { get; set; }
+            public string[] currency { get; set; }
             public decimal fees { get; set; }
             public int maxFailedLoginAttempts { get; set; }
             public string email { get; set; }
@@ -172,7 +172,6 @@ namespace PaymentWall.Controllers
         }
 
         #endregion
-
 
     }
 }

@@ -968,10 +968,28 @@ namespace PaymentWall.Controllers
         {
             public string type { get; set; }
             public string message { get; set; }
-            public List<Accounting> transfers { get; set; }
+            public List<accountingDTO> transfers { get; set; }
             public int totalTransfersCount { get; set; }
 
         }
+
+        public class accountingDTO
+        {
+            public string id { get; set; }
+            public string userId { get; set; }
+            public decimal amount { get; set; }
+            public int walletId { get; set; }
+            public decimal tax { get; set; }
+            public decimal fees { get; set; }
+            public string currency { get; set; }
+            public string financialId { get; set; }
+            public DateTimeOffset date { get; set; }
+            public string recipientUserId { get; set; }
+            public string senderUserId { get; set; }
+            public string senderName { get; set; }
+            public string recipientName { get; set; }
+        }
+
 
         [HttpPost("[action]")]
         [CheckAdminLogin(0, 1)]
@@ -992,13 +1010,27 @@ namespace PaymentWall.Controllers
             }
 
             int totalTransfersCount = query.Count();
-
             int pageNumber = filter.page ?? 1;
             int pageSize = filter.pageSize > 50 ? 50 : (filter.pageSize < 1 ? 10 : filter.pageSize);
             int skipAmount = (pageNumber - 1) * pageSize;
-            query = query.Skip(skipAmount).Take(pageSize);
+            var transfersQuery = query.Skip(skipAmount).Take(pageSize);
 
-            var transfers = query.ToList();
+            var transfers = transfersQuery.ToList().Select(a => new accountingDTO
+            {
+                id = a._id.ToString(),
+                userId = a.userId.ToString(),
+                amount = a.amount,
+                walletId = a.walletId,
+                tax = a.tax,
+                fees = a.fees,
+                currency = a.currency,
+                financialId = a.financialId?.ToString(),
+                date = a.date,
+                recipientUserId = a.recipientUserId.ToString(),
+                senderUserId = a.senderUserId.ToString(),
+                senderName = a.senderName,
+                recipientName = a.recipientName
+            }).ToList();
 
             var response = new transferListResponse
             {
@@ -1326,16 +1358,29 @@ namespace PaymentWall.Controllers
         public class ListLogsRes
         {
             public string type { get; set; }
-            public List<Log> logs { get; set; }
+            public List<LogViewModel> logs { get; set; }
             public int totalLogsCount { get; set; }
 
         }
+
+        public class LogViewModel
+        {
+            public string id { get; set; }
+            public string userId { get; set; }
+            public DateTimeOffset date { get; set; }
+            public string userAgent { get; set; }
+            public string ip { get; set; }
+            public int type { get; set; }
+            public string name { get; set; } 
+        }
+
 
         [HttpPost("[action]")]
         [CheckAdminLogin(1)]
         public ActionResult<ListLogsRes> ListLogs([FromBody] ListLogsReq req)
         {
             var _logCollection = _connectionService.db().GetCollection<Log>("Logs");
+            var _userCollection = _connectionService.db().GetCollection<Users>("Users");
             var query = _logCollection.AsQueryable();
 
             if (req.startDate.HasValue)
@@ -1349,9 +1394,22 @@ namespace PaymentWall.Controllers
             }
 
             int totalLogsCount = query.Count();
-
             var skip = (req.pageNumber.Value - 1) * req.pageSize;
-            var logs = query.Skip(skip).Take(req.pageSize).ToList();
+            var logsQuery = query.Skip(skip).Take(req.pageSize);
+
+            var logs = logsQuery.ToList().Select(log => {
+                var user = _userCollection.AsQueryable().FirstOrDefault(u => u._id == log.userId);
+                return new LogViewModel
+                {
+                    id = log._id.ToString(),
+                    userId = log.userId.ToString(),
+                    date = log.date,
+                    userAgent = log.userAgent,
+                    ip = log.ip,
+                    type = log.type,
+                    name = user?.name
+                };
+            }).ToList();
 
             return Ok(new ListLogsRes { type = "success", logs = logs, totalLogsCount = totalLogsCount });
         }
