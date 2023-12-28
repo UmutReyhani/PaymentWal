@@ -616,7 +616,6 @@ namespace PaymentWall.Controllers
             public string adminId { get; set; }
             [Required]
             public int status { get; set; }
-            public string description { get; set; }
         }
 
         public class _updateAdminStatusRes
@@ -654,7 +653,8 @@ namespace PaymentWall.Controllers
                 date = DateTimeOffset.Now,
                 type = 3,
                 userAgent = HttpContext.Request.Headers["User-Agent"].ToString(),
-                ip = HttpContext.Connection.RemoteIpAddress.ToString()
+                ip = HttpContext.Connection.RemoteIpAddress.ToString(),
+                reason = "AdminStatusUpdate"
             };
             await _adminLogCollection.InsertOneAsync(adminLog);
 
@@ -1548,14 +1548,20 @@ namespace PaymentWall.Controllers
 
         [HttpPost("ClearCollection")]
         [CheckAdminLogin(1)]
-        public IActionResult ClearCollection()
+        public IActionResult ClearCollection([FromBody] string collectionName)
         {
-            var _collection = _connectionService.db().GetCollection<AdminLog>("AdminLog");
+            if (string.IsNullOrEmpty(collectionName))
+            {
+                return BadRequest("Koleksiyon adı belirtilmeli.");
+            }
 
-            _collection.DeleteMany(Builders<AdminLog>.Filter.Empty);
+            var _collection = _connectionService.db().GetCollection<BsonDocument>(collectionName);
 
-            return Ok("AdminLog collection içindeki tüm veriler başarıyla temizlendi.");
+            _collection.DeleteMany(Builders<BsonDocument>.Filter.Empty);
+
+            return Ok($"{collectionName} koleksiyonu içindeki tüm veriler başarıyla temizlendi.");
         }
+
 
         #endregion
 
